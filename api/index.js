@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getSummary } from './controllers/analyticsController.js';
+import { getUsers, getUserDetails } from './controllers/userController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -27,6 +28,8 @@ app.use(express.json());
 
 // --- Analytics Routes ---
 app.get('/api/analytics/summary', getSummary);
+app.get('/api/analytics/users', getUsers);
+app.get('/api/analytics/users/:id', getUserDetails);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Analytics Backend is running' });

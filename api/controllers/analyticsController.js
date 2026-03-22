@@ -43,7 +43,7 @@ const fillMissingDates = (data, days) => {
 const getCollections = () => {
     const db = mongoose.connection.db;
     return {
-        users: db.collection('users'),
+        users: db.collection('users'), 
         couples: db.collection('couples'),
         answers: db.collection('answers'),
         tictactoes: db.collection('tictactoes'),
