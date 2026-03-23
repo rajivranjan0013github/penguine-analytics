@@ -13,7 +13,6 @@ export const secureFetch = async (url, options = {}) => {
         'X-Admin-Password': getAdminPassword(),
     };
     
-    console.log('Fetching:', url, 'with credentials for:', getAdminId());
 
     const response = await fetch(url, { ...options, headers });
 
@@ -37,7 +36,6 @@ export const verifyCredentials = async (id, password) => {
                 'X-Admin-Password': password
             }
         });
-        console.log('Login verification status:', res.status);
         return res.status === 200;
     } catch (error) {
         console.error('Login verification network error:', error);

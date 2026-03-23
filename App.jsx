@@ -23,7 +23,6 @@ function App() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
-      console.log('App: Received admin-unauthorized event');
       setIsAuthenticated(false);
       setAuthError(true);
     };

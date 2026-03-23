@@ -25,7 +25,6 @@ const connectToDatabase = async () => {
   try {
     await mongoose.connect(MONGODB_URI);
     isConnected = true;
-    console.log('Connected to igbackend MongoDB');
   } catch (err) {
     console.error('MongoDB connection error:', err);
     throw err;
@@ -62,11 +61,6 @@ app.use('/api/analytics', (req, res, next) => {
   const idMatch = !adminId || providedId === adminId;
   const passwordMatch = !adminPassword || providedPassword === adminPassword;
 
-  console.log(`[AUTH] Path: ${req.path} TargetIDLen: ${adminId.length} TargetPPLen: ${adminPassword.length}`, { 
-    idMatch, 
-    passwordMatch 
-  });
-
   if (idMatch && passwordMatch) {
     next();
   } else {
@@ -85,7 +79,6 @@ app.get('/api/health', (req, res) => {
 
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
-    console.log(`Analytics Server is running on port ${PORT}`);
   });
 }
 
