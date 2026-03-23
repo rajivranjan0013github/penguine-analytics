@@ -29,6 +29,20 @@ export const secureFetch = async (url, options = {}) => {
     return response;
 };
 
+export const verifyCredentials = async (id, password) => {
+    try {
+        const res = await fetch('/api/analytics/summary?days=1', {
+            headers: {
+                'X-Admin-ID': id,
+                'X-Admin-Password': password
+            }
+        });
+        return res.status === 200;
+    } catch (error) {
+        return false;
+    }
+};
+
 export const fetchSummary = async (days) => {
     const res = await secureFetch(`/api/analytics/summary?days=${days}`);
     if (!res.ok) throw new Error('Failed to fetch summary');

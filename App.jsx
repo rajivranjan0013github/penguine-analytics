@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Link } from 'react-router-dom';
 import { LayoutDashboard, Users as UsersIcon, Settings, LogOut, Gamepad2, Heart, Shield } from 'lucide-react';
 import Dashboard from './Dashboard.jsx';
 import Users from './Users.jsx';
+import { verifyCredentials } from './api';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -11,6 +12,7 @@ function App() {
   const [adminIdInput, setAdminIdInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const navClass = ({ isActive }) => 
     `px-4 py-2 flex items-center gap-2 text-sm font-bold transition-all rounded-xl ${
@@ -21,6 +23,7 @@ function App() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      console.log('App: Received admin-unauthorized event');
       setIsAuthenticated(false);
       setAuthError(true);
     };
@@ -28,16 +31,23 @@ function App() {
     return () => window.removeEventListener('admin-unauthorized', handleUnauthorized);
   }, []);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (adminIdInput.trim() && passwordInput.trim()) {
+    if (!adminIdInput.trim() || !passwordInput.trim()) return;
+
+    setVerifying(true);
+    setAuthError(false);
+
+    const isValid = await verifyCredentials(adminIdInput, passwordInput);
+
+    if (isValid) {
       localStorage.setItem('admin_id', adminIdInput);
       localStorage.setItem('admin_password', passwordInput);
       setIsAuthenticated(true);
-      setAuthError(false);
-      // Wait for a bit then reload to ensure all components refetch with the new header
-      setTimeout(() => window.location.reload(), 100);
+    } else {
+      setAuthError(true);
     }
+    setVerifying(false);
   };
 
   const handleLogout = () => {
@@ -96,9 +106,20 @@ function App() {
 
             <button
               type="submit"
-              className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98] transition-all"
+              disabled={verifying}
+              className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3"
             >
-              Verify & Enter
+              {verifying ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Authorizing...
+                </>
+              ) : (
+                'Verify & Enter'
+              )}
             </button>
           </form>
 
