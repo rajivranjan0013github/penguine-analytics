@@ -20,7 +20,7 @@ const getStartDate = (days) => {
 // Fill in missing dates for trend data
 const fillMissingDates = (data, days) => {
     const result = [];
-    const dataMap = new Map(data.map(d => [d._id, d.count]));
+    const dataMap = new Map(data.map(d => [d._id, d]));
 
     const now = new Date();
     // Create a date object in IST
@@ -31,15 +31,16 @@ const fillMissingDates = (data, days) => {
         date.setUTCDate(date.getUTCDate() - i);
         const dateStr = date.toISOString().split('T')[0];
         
+        const existingData = dataMap.get(dateStr) || {};
         result.push({
             date: dateStr,
-            count: dataMap.get(dateStr) || 0
+            count: existingData.count || 0,
+            uniqueCouples: existingData.uniqueCouples || 0
         });
     }
     return result;
 };
 
-// Native collection access to avoid model overhead
 const getCollections = () => {
     const db = mongoose.connection.db;
     return {
@@ -48,7 +49,9 @@ const getCollections = () => {
         answers: db.collection('answers'),
         tictactoes: db.collection('tictactoes'),
         wordles: db.collection('wordles'),
-        jigsawpuzzles: db.collection('jigsawpuzzles')
+        jigsawpuzzles: db.collection('jigsawpuzzles'),
+        chats: db.collection('chats'),
+        dailyanswers: db.collection('dailyanswers')
     };
 };
 
@@ -56,103 +59,163 @@ export const getSummary = async (req, res) => {
     try {
         const days = parseInt(req.query.days) || 30;
         const startDate = getStartDate(days);
-        const { users, couples, answers, tictactoes, wordles, jigsawpuzzles } = getCollections();
+        const { users, couples } = getCollections();
+        const db = mongoose.connection.db;
 
         const [
             totalUsers,
             activeCouples,
-            totalAnswers,
             genderCounts,
+            platformCounts,
+            connectivityCounts,
             userTrendData,
             coupleTrendData,
-            answerTrendData,
-            gameStats
+            engagementCounts,
+            engagementTrendResults
         ] = await Promise.all([
             // Core Metrics
             users.countDocuments(),
             couples.countDocuments({ status: 'active' }),
-            answers.countDocuments(),
-
+            
             // Demographics
-            users.aggregate([
-                { $group: { _id: '$gender', count: { $sum: 1 } } }
-            ]).toArray(),
+            users.aggregate([{ $group: { _id: '$gender', count: { $sum: 1 } } }]).toArray(),
+            users.aggregate([{ $group: { _id: '$platform', count: { $sum: 1 } } }]).toArray(),
+            users.aggregate([{ $group: { _id: { $cond: [{ $ifNull: ['$partnerId', false] }, 'connected', 'unpaired'] }, count: { $sum: 1 } } }]).toArray(),
 
-            // User Growth Trend
+            // Trends
             users.aggregate([
                 { $match: { createdAt: { $gte: startDate } } },
-                {
-                    $group: {
-                        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } },
-                        count: { $sum: 1 }
-                    }
-                },
+                { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 } } },
                 { $sort: { _id: 1 } }
             ]).toArray(),
 
-            // Couple Connectivity Trend
             couples.aggregate([
                 { $match: { connectionDate: { $gte: startDate } } },
-                {
-                    $group: {
-                        _id: { $dateToString: { format: '%Y-%m-%d', date: '$connectionDate', timezone: '+05:30' } },
-                        count: { $sum: 1 }
-                    }
-                },
+                { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$connectionDate', timezone: '+05:30' } }, count: { $sum: 1 } } },
                 { $sort: { _id: 1 } }
             ]).toArray(),
 
-            // Engagement Trend (Answers)
-            answers.aggregate([
-                { $match: { createdAt: { $gte: startDate } } },
-                {
-                    $group: {
-                        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } },
-                        count: { $sum: 1 }
-                    }
-                },
-                { $sort: { _id: 1 } }
-            ]).toArray(),
-
-            // Game Popularity
+            // Total Engagement Counts [Chats, TicTacToe, Wordle, Jigsaw, Daily]
             Promise.all([
-                tictactoes.countDocuments(),
-                wordles.countDocuments(),
-                jigsawpuzzles.countDocuments()
+                db.collection('chats').countDocuments(),
+                db.collection('tictactoes').countDocuments(),
+                db.collection('wordles').countDocuments(),
+                db.collection('jigsawpuzzles').countDocuments(),
+                db.collection('dailyanswers').countDocuments()
+            ]),
+
+            // Engagement Trends from multiple collections
+            Promise.all([
+                db.collection('chats').aggregate([{ $match: { createdAt: { $gte: startDate } } }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 }, couples: { $addToSet: '$coupleId' } } }]).toArray(),
+                db.collection('tictactoes').aggregate([
+                    { $match: { createdAt: { $gte: startDate } } }, 
+                    { $addFields: { 
+                        cid: { $cond: [ { $lt: [ { $toString: "$creatorId" }, { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$creatorId" }, "_", { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$partnerId" }, "_", { $toString: "$creatorId" } ] } ] }
+                    }},
+                    { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 }, couples: { $addToSet: '$cid' } } }
+                ]).toArray(),
+                db.collection('wordles').aggregate([
+                    { $match: { createdAt: { $gte: startDate } } }, 
+                    { $addFields: { 
+                        cid: { $cond: [ { $lt: [ { $toString: "$creatorId" }, { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$creatorId" }, "_", { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$partnerId" }, "_", { $toString: "$creatorId" } ] } ] }
+                    }},
+                    { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 }, couples: { $addToSet: '$cid' } } }
+                ]).toArray(),
+                db.collection('jigsawpuzzles').aggregate([
+                    { $match: { createdAt: { $gte: startDate } } }, 
+                    { $addFields: { 
+                        cid: { $cond: [ { $lt: [ { $toString: "$creatorId" }, { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$creatorId" }, "_", { $toString: "$partnerId" } ] }, { $concat: [ { $toString: "$partnerId" }, "_", { $toString: "$creatorId" } ] } ] }
+                    }},
+                    { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 }, couples: { $addToSet: '$cid' } } }
+                ]).toArray(),
+                db.collection('dailyanswers').aggregate([{ $match: { createdAt: { $gte: startDate } } }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } }, count: { $sum: 1 }, couples: { $addToSet: '$coupleId' } } }]).toArray()
+            ])
+        ]);
+
+        // Merge engagement trends and unique couples
+        const mergedEngagementTrendMap = new Map();
+        const dailyUniqueCouplesMap = new Map();
+
+        engagementTrendResults.flat().forEach(entry => {
+            // Stats
+            const currentCount = mergedEngagementTrendMap.get(entry._id) || 0;
+            mergedEngagementTrendMap.set(entry._id, currentCount + entry.count);
+
+            // Couples
+            if (!dailyUniqueCouplesMap.has(entry._id)) {
+                dailyUniqueCouplesMap.set(entry._id, new Set());
+            }
+            const set = dailyUniqueCouplesMap.get(entry._id);
+            entry.couples?.forEach(cid => {
+                if (cid) set.add(cid.toString());
+            });
+        });
+
+        const engagementTrendData = Array.from(mergedEngagementTrendMap.entries())
+            .map(([_id, count]) => ({ 
+                _id, 
+                count,
+                uniqueCouples: dailyUniqueCouplesMap.get(_id)?.size || 0 
+            }))
+            .sort((a, b) => a._id.localeCompare(b._id));
+
+        const todayStart = getStartDate(0);
+
+        const [todayEngagementCounts] = await Promise.all([
+            Promise.all([
+                db.collection('chats').countDocuments({ createdAt: { $gte: todayStart } }),
+                db.collection('tictactoes').countDocuments({ createdAt: { $gte: todayStart } }),
+                db.collection('wordles').countDocuments({ createdAt: { $gte: todayStart } }),
+                db.collection('jigsawpuzzles').countDocuments({ createdAt: { $gte: todayStart } }),
+                db.collection('dailyanswers').countDocuments({ createdAt: { $gte: todayStart } })
             ])
         ]);
 
         const userTrend = fillMissingDates(userTrendData, days);
         const coupleTrend = fillMissingDates(coupleTrendData, days);
-        const answerTrend = fillMissingDates(answerTrendData, days);
-
-        const genderSplit = [
-            { name: 'Male', value: genderCounts.find(g => g._id === 'male')?.count || 0 },
-            { name: 'Female', value: genderCounts.find(g => g._id === 'female')?.count || 0 },
-            { name: 'Other', value: genderCounts.find(g => g._id === 'other')?.count || 0 },
-        ];
-
-        const gameSplit = [
-            { name: 'TicTacToe', value: gameStats[0] },
-            { name: 'Wordle', value: gameStats[1] },
-            { name: 'Puzzles', value: gameStats[2] },
-        ];
+        const engagementTrend = fillMissingDates(engagementTrendData, days);
+        
+        // Individual Game Trends with Unique Couples
+        const ttTrend = fillMissingDates(engagementTrendResults[1].map(d => ({ ...d, uniqueCouples: d.couples?.length || 0 })), days);
+        const wdTrend = fillMissingDates(engagementTrendResults[2].map(d => ({ ...d, uniqueCouples: d.couples?.length || 0 })), days);
+        const jsTrend = fillMissingDates(engagementTrendResults[3].map(d => ({ ...d, uniqueCouples: d.couples?.length || 0 })), days);
 
         res.json({
             metrics: {
                 totalUsers,
                 activeCouples,
-                totalAnswers,
-                totalGames: gameStats.reduce((a, b) => a + b, 0)
+                todayEngagements: todayEngagementCounts.reduce((a, b) => a + b, 0),
+                todayGames: todayEngagementCounts[1] + todayEngagementCounts[2] + todayEngagementCounts[3]
             },
             trends: {
                 userTrend,
                 coupleTrend,
-                answerTrend
+                engagementTrend,
+                gameTrends: {
+                    tictactoe: ttTrend,
+                    wordle: wdTrend,
+                    jigsaw: jsTrend
+                }
             },
             splits: {
-                genderSplit,
-                gameSplit
+                genderSplit: [
+                    { name: 'Male', value: genderCounts.find(g => g._id === 'male')?.count || 0 },
+                    { name: 'Female', value: genderCounts.find(g => g._id === 'female')?.count || 0 },
+                    { name: 'Other', value: genderCounts.find(g => g._id === 'other')?.count || 0 },
+                ],
+                gameSplit: [
+                    { name: 'TicTacToe', value: engagementCounts[1] },
+                    { name: 'Wordle', value: engagementCounts[2] },
+                    { name: 'Puzzles', value: engagementCounts[3] },
+                ],
+                platformSplit: [
+                    { name: 'iOS', value: platformCounts.find(p => p._id === 'ios')?.count || 0 },
+                    { name: 'Android', value: platformCounts.find(p => p._id === 'android')?.count || 0 },
+                ],
+                connectivitySplit: [
+                    { name: 'Connected', value: connectivityCounts.find(c => c._id === 'connected')?.count || 0 },
+                    { name: 'Unpaired', value: connectivityCounts.find(c => c._id === 'unpaired')?.count || 0 },
+                ]
             }
         });
     } catch (err) {

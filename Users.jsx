@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import UserModal from './UserModal.jsx';
 import { 
   Users as UsersIcon, 
   Search, 
@@ -7,10 +8,15 @@ import {
   Loader2, 
   Crown,
   Calendar,
-  X
+  X,
+  Smartphone,
+  Heart,
+  UserCheck,
+  UserPlus
 } from 'lucide-react';
 
 const Users = () => {
+    const [selectedUserId, setSelectedUserId] = useState(null);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -18,7 +24,7 @@ const Users = () => {
     const [totalUsers, setTotalUsers] = useState(0);
     const [search, setSearch] = useState('');
     const [activeSearch, setActiveSearch] = useState('');
-    const limit = 10;
+    const limit = 15;
 
     useEffect(() => {
         fetchUsers();
@@ -119,8 +125,9 @@ const Users = () => {
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">User Profile</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Email</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Status</th>
+                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Platform</th>
+                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Connectivity</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Joined</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Partner Code</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -136,7 +143,11 @@ const Users = () => {
                                 ))
                             ) : users.length > 0 ? (
                                 users.map((user) => (
-                                    <tr key={user._id} className="hover:bg-white/5 transition-colors group">
+                                    <tr 
+                                        key={user._id} 
+                                        onClick={() => setSelectedUserId(user._id)}
+                                        className="hover:bg-white/5 transition-colors group cursor-pointer"
+                                    >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/20 group-hover:bg-indigo-500 group-hover:text-white transition-all">
@@ -158,16 +169,36 @@ const Users = () => {
                                                 </span>
                                             )}
                                         </td>
+                                        <td className="px-6 py-4">
+                                            {user.platform ? (
+                                                <div className="flex items-center gap-2">
+                                                    <Smartphone className={`w-3.5 h-3.5 ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`} />
+                                                    <span className={`text-xs font-bold uppercase tracking-wider ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                                                        {user.platform === 'ios' ? 'iOS' : 'Android'}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-white/20 italic">Unknown</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {user.partnerId ? (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                                    <Heart className="w-3 h-3 fill-rose-500/20" />
+                                                    Connected
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-white/5 text-white/30 border border-white/5">
+                                                    <UserPlus className="w-3 h-3" />
+                                                    Unpaired
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-white/50">
                                             <div className="flex items-center gap-2">
                                                 <Calendar className="w-3.5 h-3.5" />
                                                 {timeAgo(user.createdAt)}
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <code className="text-xs bg-indigo-500/10 text-indigo-400 px-2 py-1 rounded border border-indigo-500/20 font-mono">
-                                                {user.partnerCode || '---'}
-                                            </code>
                                         </td>
                                     </tr>
                                 ))
@@ -226,6 +257,12 @@ const Users = () => {
                     </div>
                 </div>
             </div>
+
+            {/* User Details Modal */}
+            <UserModal 
+                userId={selectedUserId} 
+                onClose={() => setSelectedUserId(null)} 
+            />
         </div>
     );
 };
