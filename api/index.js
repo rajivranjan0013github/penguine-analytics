@@ -11,20 +11,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 dotenv.config(); 
-dotenv.config({ path: join(__dirname, '..', '.env') });
-
+const MONGODB_URI = process.env.MONGODB_URI;
 const app = express();
 const PORT = process.env.PORT || 5001;
-const MONGODB_URI = process.env.MONGODB_URI;
 
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log('Connected to igbackend MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
-}
+let isConnected = false;
+const connectToDatabase = async () => {
+  if (isConnected) return;
+  if (!MONGODB_URI) {
+    console.error('MONGODB_URI is missing!');
+    return;
+  }
+  try {
+    await mongoose.connect(MONGODB_URI);
+    isConnected = true;
+    console.log('Connected to igbackend MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    throw err;
+  }
+};
 
 app.use(cors());
 app.use(express.json());
+
+// Ensure DB connection for all API routes
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectToDatabase();
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
 
 // --- Admin Password Protection Middleware ---
 app.use('/api/analytics', (req, res, next) => {
