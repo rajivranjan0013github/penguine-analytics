@@ -37,8 +37,10 @@ export const verifyCredentials = async (id, password) => {
                 'X-Admin-Password': password
             }
         });
+        console.log('Login verification status:', res.status);
         return res.status === 200;
     } catch (error) {
+        console.error('Login verification network error:', error);
         return false;
     }
 };
