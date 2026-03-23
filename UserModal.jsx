@@ -14,6 +14,8 @@ import {
   Loader2
 } from 'lucide-react';
 
+import { fetchUserDetails } from './api';
+
 const UserModal = ({ userId, onClose }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -21,12 +23,11 @@ const UserModal = ({ userId, onClose }) => {
     const [expandedActivity, setExpandedActivity] = useState(null);
 
     useEffect(() => {
-        const fetchUserDetails = async () => {
+        const handleFetchUserDetails = async () => {
             if (!userId) return;
             setLoading(true);
             try {
-                const res = await fetch(`/api/analytics/users/${userId}`);
-                const data = await res.json();
+                const data = await fetchUserDetails(userId);
                 setUser(data);
             } catch (err) {
                 console.error('Failed to fetch user details:', err);
@@ -34,7 +35,7 @@ const UserModal = ({ userId, onClose }) => {
                 setLoading(false);
             }
         };
-        fetchUserDetails();
+        handleFetchUserDetails();
     }, [userId]);
 
     const timeAgo = (date) => {

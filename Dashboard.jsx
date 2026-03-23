@@ -17,6 +17,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell 
 } from 'recharts';
+import { fetchSummary } from './api';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6'];
 
@@ -44,11 +45,14 @@ function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/analytics/summary?days=${timeRange}`);
-      const result = await res.json();
+      const result = await fetchSummary(timeRange);
       setData(result);
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
+      if (err.message === 'Unauthorized') {
+        // App.jsx will handle the redirect on next render if we clear localStorage here, 
+        // but secureFetch already clears it.
+      }
     } finally {
       setLoading(false);
     }

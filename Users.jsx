@@ -15,6 +15,8 @@ import {
   UserPlus
 } from 'lucide-react';
 
+import { fetchUsers } from './api';
+
 const Users = () => {
     const [selectedUserId, setSelectedUserId] = useState(null);
     const [users, setUsers] = useState([]);
@@ -27,15 +29,13 @@ const Users = () => {
     const limit = 15;
 
     useEffect(() => {
-        fetchUsers();
+        handleFetchUsers();
     }, [page, activeSearch]);
 
-    const fetchUsers = async () => {
+    const handleFetchUsers = async () => {
         setLoading(true);
         try {
-            const url = `/api/analytics/users?page=${page}&limit=${limit}&search=${encodeURIComponent(activeSearch)}`;
-            const res = await fetch(url);
-            const data = await res.json();
+            const data = await fetchUsers(page, limit, activeSearch);
             setUsers(data.users || []);
             setTotalPages(data.pagination?.totalPages || 1);
             setTotalUsers(data.pagination?.total || 0);
