@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import UserModal from './UserModal.jsx';
 import { 
   Users as UsersIcon, 
   Search, 
   ChevronLeft, 
   ChevronRight, 
-  Loader2, 
   Crown,
   Calendar,
+  Globe2,
   X,
   Smartphone,
   Heart,
-  UserCheck,
   UserPlus
 } from 'lucide-react';
 
@@ -28,11 +27,7 @@ const Users = () => {
     const [activeSearch, setActiveSearch] = useState('');
     const limit = 15;
 
-    useEffect(() => {
-        handleFetchUsers();
-    }, [page, activeSearch]);
-
-    const handleFetchUsers = async () => {
+    const handleFetchUsers = useCallback(async () => {
         setLoading(true);
         try {
             const data = await fetchUsers(page, limit, activeSearch);
@@ -44,7 +39,11 @@ const Users = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeSearch, page]);
+
+    useEffect(() => {
+        handleFetchUsers();
+    }, [handleFetchUsers]);
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -91,7 +90,7 @@ const Users = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 group-focus-within:text-indigo-500 transition-colors" />
                         <input
                             type="text"
-                            placeholder="Find by name or email..."
+                            placeholder="Find a user..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className="w-full bg-[#2a2a2a] border border-white/5 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-white/30"
@@ -123,9 +122,10 @@ const Users = () => {
                         <thead>
                             <tr className="border-b border-white/5 bg-white/5">
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">User Profile</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Email</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Status</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Platform</th>
+                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Country</th>
+                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Last Active</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Connectivity</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Joined</th>
                             </tr>
@@ -134,7 +134,7 @@ const Users = () => {
                             {loading ? (
                                 Array.from({ length: limit }).map((_, i) => (
                                     <tr key={i} className="animate-pulse">
-                                        {Array.from({ length: 5 }).map((_, j) => (
+                                        {Array.from({ length: 7 }).map((_, j) => (
                                             <td key={j} className="px-6 py-4">
                                                 <div className="h-4 bg-white/5 rounded w-full"></div>
                                             </td>
@@ -156,7 +156,6 @@ const Users = () => {
                                                 <span className="font-semibold text-white/90">{user.name || 'Anonymous'}</span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-white/50">{user.email || 'No email provided'}</td>
                                         <td className="px-6 py-4">
                                             {user.isPremium ? (
                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
@@ -174,19 +173,41 @@ const Users = () => {
                                                 <div className="flex items-center gap-2">
                                                     <Smartphone className={`w-3.5 h-3.5 ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`} />
                                                     <span className={`text-xs font-bold uppercase tracking-wider ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`}>
-                                                        {user.platform === 'ios' ? 'iOS' : 'Android'}
+                                                        {user.platform === 'ios' ? 'iOS' : user.platform}
                                                     </span>
+                                                    {user.appVersion && <span className="text-[10px] text-white/25">v{user.appVersion}</span>}
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-white/20 italic">Unknown</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2" title={user.timezone || 'Timezone not reported'}>
+                                                <Globe2 className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+                                                <div className="min-w-0">
+                                                    <p className="max-w-36 truncate text-xs font-bold text-white/70">
+                                                        {user.country?.name || 'Unknown country'}
+                                                    </p>
+                                                    {user.country?.code && (
+                                                        <p className="mt-0.5 text-[9px] font-black uppercase tracking-wider text-white/25">{user.country.code}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-white/50">
+                                            {user.lastSeen ? timeAgo(user.lastSeen) : 'Never'}
+                                        </td>
+                                        <td className="px-6 py-4">
                                             {user.partnerId ? (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                                                    <Heart className="w-3 h-3 fill-rose-500/20" />
-                                                    Connected
-                                                </span>
+                                                <div>
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                                        <Heart className="w-3 h-3 fill-rose-500/20" />
+                                                        Connected
+                                                    </span>
+                                                    <p className="mt-1.5 pl-1 text-[9px] font-semibold text-white/35">
+                                                        {user.connectionDate ? timeAgo(user.connectionDate) : 'Date unavailable'}
+                                                    </p>
+                                                </div>
                                             ) : (
                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-white/5 text-white/30 border border-white/5">
                                                     <UserPlus className="w-3 h-3" />
@@ -204,7 +225,7 @@ const Users = () => {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-white/20 italic">
+                                    <td colSpan="7" className="px-6 py-12 text-center text-white/20 italic">
                                         No users found matching your search.
                                     </td>
                                 </tr>

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
   User as UserIcon, 
-  Mail, 
-  Calendar, 
   Crown, 
   Smartphone, 
   Heart, 
@@ -10,7 +8,6 @@ import {
   Activity,
   MessageSquare,
   Gamepad2,
-  Clock,
   Loader2
 } from 'lucide-react';
 
@@ -108,6 +105,21 @@ const UserModal = ({ userId, onClose }) => {
                                                     <span className="text-white/30 font-bold uppercase tracking-wider">Joined</span>
                                                     <span className="text-white font-black">{new Date(user.createdAt).toLocaleDateString()}</span>
                                                 </div>
+                                                <div className="flex items-center justify-between text-[11px]">
+                                                    <span className="text-white/30 font-bold uppercase tracking-wider">Last active</span>
+                                                    <span className="text-white font-black">{timeAgo(user.lastSeen)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[11px]">
+                                                    <span className="text-white/30 font-bold uppercase tracking-wider">App</span>
+                                                    <span className="text-white font-black">
+                                                        {user.appVersion ? `v${user.appVersion}` : 'Unknown'}
+                                                        {user.appBuildNumber ? ` (${user.appBuildNumber})` : ''}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[11px]">
+                                                    <span className="text-white/30 font-bold uppercase tracking-wider">Language</span>
+                                                    <span className="text-white font-black uppercase">{user.preferredLanguage || 'Unknown'}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -147,15 +159,26 @@ const UserModal = ({ userId, onClose }) => {
                                         </div>
                                     )}
 
-                                    <div className="bg-[#242424] p-6 rounded-[2rem] border border-white/5 grid grid-cols-2 gap-4">
-                                        <div className="text-center">
-                                            <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Engagements</p>
-                                            <p className="text-2xl font-black text-indigo-500 leading-none">{user.activities?.answers?.length || 0}</p>
-                                        </div>
-                                        <div className="text-center ml-2">
-                                            <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Sessions</p>
-                                            <p className="text-2xl font-black text-purple-500 leading-none">{user.activities?.games?.length || 0}</p>
-                                        </div>
+                                    <div className="bg-[#242424] p-5 rounded-[2rem] border border-white/5 grid grid-cols-2 gap-3">
+                                        {[
+                                            ['Conversations', user.totals?.conversations, 'text-indigo-400'],
+                                            ['Question answers', user.totals?.questionAnswers, 'text-sky-400'],
+                                            ['Rituals', user.totals?.completedRituals, 'text-rose-400'],
+                                            ['Games', user.totals?.completedGames, 'text-amber-400'],
+                                            ['Mood updates', user.totals?.moodUpdates, 'text-emerald-400'],
+                                            ['Memories', user.totals?.memories, 'text-purple-400'],
+                                        ].map(([label, value, color]) => (
+                                            <div key={label} className="rounded-xl bg-white/[0.025] p-3 text-center">
+                                                <p className="text-[8px] font-black text-white/20 uppercase tracking-wider mb-1">{label}</p>
+                                                <p className={`text-xl font-black leading-none ${color}`}>{value || 0}</p>
+                                            </div>
+                                        ))}
+                                        {user.streak && (
+                                            <div className="col-span-2 rounded-xl border border-rose-500/10 bg-rose-500/5 p-3 text-center">
+                                                <p className="text-[8px] font-black uppercase tracking-wider text-rose-400/60">Current ritual streak</p>
+                                                <p className="mt-1 text-xl font-black text-rose-400">{user.streak.current} days</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

@@ -1,20 +1,20 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route, NavLink, Link } from 'react-router-dom';
-import { LayoutDashboard, Users as UsersIcon, Settings, LogOut, Gamepad2, Heart, Shield } from 'lucide-react';
-import Dashboard from './Dashboard.jsx';
-import Users from './Users.jsx';
-import { verifyCredentials } from './api';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { LayoutDashboard, Users as UsersIcon, Settings, LogOut, Shield } from 'lucide-react';
+import { logout, verifyCredentials, verifySession } from './api';
+
+const Dashboard = lazy(() => import('./Dashboard.jsx'));
+const Users = lazy(() => import('./Users.jsx'));
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    !!localStorage.getItem('admin_id') && !!localStorage.getItem('admin_password')
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [adminIdInput, setAdminIdInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [pathname, setPathname] = useState(window.location.pathname);
 
-  const navClass = ({ isActive }) => 
+  const navClass = (isActive) =>
     `px-4 py-2 flex items-center gap-2 text-sm font-bold transition-all rounded-xl ${
       isActive 
         ? 'bg-indigo-600/10 text-indigo-400 shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border border-indigo-500/20' 
@@ -27,8 +27,25 @@ function App() {
       setAuthError(true);
     };
     window.addEventListener('admin-unauthorized', handleUnauthorized);
-    return () => window.removeEventListener('admin-unauthorized', handleUnauthorized);
+    const handlePopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    verifySession().then((valid) => {
+      setIsAuthenticated(valid);
+      setAuthChecking(false);
+    });
+
+    return () => {
+      window.removeEventListener('admin-unauthorized', handleUnauthorized);
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
+
+  const navigateTo = (event, destination) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    window.history.pushState({}, '', destination);
+    setPathname(destination);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -40,21 +57,22 @@ function App() {
     const isValid = await verifyCredentials(adminIdInput, passwordInput);
 
     if (isValid) {
-      localStorage.setItem('admin_id', adminIdInput);
-      localStorage.setItem('admin_password', passwordInput);
       setIsAuthenticated(true);
+      setPasswordInput('');
     } else {
       setAuthError(true);
     }
     setVerifying(false);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('admin_id');
-    localStorage.removeItem('admin_password');
+  const handleLogout = async () => {
+    await logout();
     setIsAuthenticated(false);
-    window.location.reload();
   };
+
+  if (authChecking) {
+    return <div className="min-h-screen bg-[#1a1a1a]" aria-label="Checking authentication" />;
+  }
 
   if (!isAuthenticated) {
     return (
@@ -135,29 +153,29 @@ function App() {
       {/* Premium Navbar */}
       <nav className="border-b border-white/5 bg-[#1a1a1a]/80 backdrop-blur-xl sticky top-0 z-50 shadow-2xl">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-3 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-all active:scale-95 group">
+          <a href="/" onClick={(event) => navigateTo(event, '/')} className="flex items-center gap-3 hover:opacity-80 transition-all active:scale-95 group">
             <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20 group-hover:rotate-12 transition-transform">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <span className="font-bold text-white text-lg tracking-tight">Penguine <span className="text-indigo-400">Analytics</span></span>
-          </Link>
+          </a>
           
           <div className="flex items-center gap-4">
             <div className="hidden md:flex gap-1 bg-[#252525] p-1 rounded-2xl border border-white/5">
-              <NavLink to="/" className={navClass}>
+              <a href="/" onClick={(event) => navigateTo(event, '/')} className={navClass(pathname === '/')}>
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
-              </NavLink>
-              <NavLink to="/users" className={navClass}>
+              </a>
+              <a href="/users" onClick={(event) => navigateTo(event, '/users')} className={navClass(pathname === '/users')}>
                 <UsersIcon className="w-4 h-4" />
                 Users
-              </NavLink>
-              <NavLink to="/settings" className={navClass}>
+              </a>
+              <a href="/settings" onClick={(event) => navigateTo(event, '/settings')} className={navClass(pathname === '/settings')}>
                 <Settings className="w-4 h-4" />
                 Settings
-              </NavLink>
+              </a>
             </div>
             <button 
               onClick={handleLogout}
@@ -170,21 +188,17 @@ function App() {
         </div>
       </nav>
 
-      {/* Routes */}
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/users" element={<Users />} />
-        <Route 
-          path="/settings" 
-          element={
-            <div className="max-w-7xl mx-auto p-12 text-center">
-              <h2 className="text-3xl font-bold text-white mb-4">Settings Page</h2>
-              <p className="text-white/40">Routing is now implemented! This page is a placeholder.</p>
-              <Link to="/" className="mt-8 inline-block text-indigo-400 font-bold hover:underline">← Back to Dashboard</Link>
-            </div>
-          } 
-        />
-      </Routes>
+      <Suspense fallback={<div className="min-h-[calc(100vh-70px)] bg-[#191919]" aria-label="Loading page" />}>
+        {pathname === '/users' && <Users />}
+        {pathname === '/settings' && (
+          <div className="max-w-7xl mx-auto p-12 text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">Settings Page</h2>
+            <p className="text-white/40">Settings will be available here.</p>
+            <a href="/" onClick={(event) => navigateTo(event, '/')} className="mt-8 inline-block text-indigo-400 font-bold hover:underline">← Back to Dashboard</a>
+          </div>
+        )}
+        {!['/users', '/settings'].includes(pathname) && <Dashboard />}
+      </Suspense>
     </div>
   );
 }
