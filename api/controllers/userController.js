@@ -213,6 +213,7 @@ export const getUserDetails = async (req, res) => {
             tictactoes,
             wordles,
             jigsawpuzzles,
+            wordSearchGames,
             dailyanswers,
             chats,
             questionAnswersV2,
@@ -228,6 +229,9 @@ export const getUserDetails = async (req, res) => {
                 $or: [{ creatorId: userId }, { partnerId: userId }] 
             }).sort({ createdAt: -1 }).limit(10).toArray(),
             db.collection('jigsawpuzzles').find({ 
+                $or: [{ creatorId: userId }, { partnerId: userId }] 
+            }).sort({ createdAt: -1 }).limit(10).toArray(),
+            db.collection('wordsearchgames').find({ 
                 $or: [{ creatorId: userId }, { partnerId: userId }] 
             }).sort({ createdAt: -1 }).limit(10).toArray(),
             db.collection('dailyanswers').find({ userId }).sort({ createdAt: -1 }).limit(10).toArray(),
@@ -259,6 +263,10 @@ export const getUserDetails = async (req, res) => {
                 db.collection('jigsawpuzzles').countDocuments({
                     $or: [{ creatorId: userId }, { partnerId: userId }],
                     solvedAt: { $ne: null }
+                }),
+                db.collection('wordsearchgames').countDocuments({
+                    $or: [{ creatorId: userId }, { partnerId: userId }],
+                    completedAt: { $ne: null }
                 }),
                 db.collection('moodlogs').countDocuments({ userId }),
                 activeCouple
@@ -296,9 +304,9 @@ export const getUserDetails = async (req, res) => {
                 conversations: activityTotals[0],
                 questionAnswers: activityTotals[1],
                 completedRituals: activityTotals[2],
-                completedGames: activityTotals[3] + activityTotals[4] + activityTotals[5],
-                moodUpdates: activityTotals[6],
-                memories: activityTotals[7]
+                completedGames: activityTotals[3] + activityTotals[4] + activityTotals[5] + activityTotals[6],
+                moodUpdates: activityTotals[7],
+                memories: activityTotals[8]
             },
             activities: {
                 answers: [
@@ -336,6 +344,15 @@ export const getUserDetails = async (req, res) => {
                         ...g, 
                         type: 'Jigsaw', 
                         text: g.status === 'solved' ? 'Victory! Completed the puzzle.' : 'Assembling the pieces...' 
+                    })),
+                    ...wordSearchGames.map(g => ({
+                        ...g,
+                        type: 'Word Search',
+                        text: g.status === 'completed'
+                            ? (g.winner?.toString() === userId.toString()
+                                ? `Victory! Found words in ${g.difficulty || 'medium'} mode`
+                                : (g.isDraw ? 'Match Draw!' : 'Match Completed'))
+                            : (g.status === 'abandoned' ? 'Abandoned session' : `Active search (${g.mode === 'single' ? 'Solo' : 'Duel'})`)
                     })),
                     ...dailyanswers.map(d => ({ 
                         ...d, 

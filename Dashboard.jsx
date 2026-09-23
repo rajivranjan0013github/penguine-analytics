@@ -129,6 +129,7 @@ function Dashboard() {
       'Tic-Tac-Toe': item.count,
       Wordle: data.trends.gameTrends.wordle[index]?.count || 0,
       'Puzzles created': data.trends.gameTrends.jigsaw[index]?.count || 0,
+      'Word Search': data.trends.gameTrends.wordsearch?.[index]?.count || 0,
     })) || []
   ), [data]);
 
@@ -435,6 +436,50 @@ function Dashboard() {
       </Card>
 
       <Card className="p-6">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <SectionTitle icon={Gamepad2} title="Game Activity" subtitle="Tic-Tac-Toe, Wordle, and Word Search completions; puzzles created" color="text-amber-500" />
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-slate-600">
+            {[
+              ['Tic-Tac-Toe', '#f59e0b'],
+              ['Wordle', '#8b5cf6'],
+              ['Word Search', '#06b6d4'],
+              ['Puzzles created', '#10b981'],
+            ].map(([label, color]) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="mt-5 h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={gameTrend} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+              <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
+              <XAxis
+                dataKey="date"
+                stroke="#94a3b8"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(val) => val?.split('-')?.slice(2)?.join('/') || val}
+                minTickGap={timeRange > 30 ? 40 : 20}
+              />
+              <YAxis width={35} stroke="#94a3b8" fontSize={10} allowDecimals={false} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                labelClassName="font-bold text-slate-800 text-xs"
+              />
+              <Area type="monotone" dataKey="Tic-Tac-Toe" stackId="games" stroke="#f59e0b" fill="#f59e0b25" />
+              <Area type="monotone" dataKey="Wordle" stackId="games" stroke="#8b5cf6" fill="#8b5cf625" />
+              <Area type="monotone" dataKey="Word Search" stackId="games" stroke="#06b6d4" fill="#06b6d425" />
+              <Area type="monotone" dataKey="Puzzles created" stackId="games" stroke="#10b981" fill="#10b98125" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      <Card className="p-6">
         <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
           <SectionTitle
             icon={UserCheck}
@@ -564,95 +609,53 @@ function Dashboard() {
         </div>
       </Card>
 
-      <Card className="p-6">
-        <div className="flex items-start justify-between">
-          <SectionTitle icon={Heart} title="Daily Ritual Health" subtitle="Whether neither, one, or both partners completed the ritual" color="text-rose-500" />
-          <div className="text-right">
-            <p className="text-xs font-semibold text-slate-400">Avg. current streak</p>
-            <p className="text-2xl font-bold text-rose-500">{rituals.averageCurrentStreak || 0}</p>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="p-6">
+          <div className="flex items-start justify-between">
+            <SectionTitle icon={Heart} title="Daily Ritual Health" subtitle="Whether neither, one, or both partners completed the ritual" color="text-rose-500" />
+            <div className="text-right">
+              <p className="text-xs font-semibold text-slate-400">Avg. current streak</p>
+              <p className="text-2xl font-bold text-rose-500">{rituals.averageCurrentStreak || 0}</p>
+            </div>
           </div>
-        </div>
-        <div className="mt-4 grid grid-cols-1 items-center gap-4 sm:grid-cols-2">
-          <div className="h-52">
-            {ritualPie.some((item) => item.value > 0) ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={ritualPie} dataKey="value" innerRadius={54} outerRadius={78} paddingAngle={5}>
-                    {ritualPie.map((item, index) => <Cell key={item.name} fill={['#10b981', '#f59e0b', '#cbd5e1'][index]} stroke="none" />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', color: '#1e293b', fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <Empty />}
-          </div>
-          <div className="space-y-3">
-            {ritualPie.map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: ['#10b981', '#f59e0b', '#cbd5e1'][index] }} />
-                  <span className="text-xs font-semibold text-slate-700">{item.name}</span>
+          <div className="mt-4 grid grid-cols-1 items-center gap-4 sm:grid-cols-2">
+            <div className="h-52">
+              {ritualPie.some((item) => item.value > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={ritualPie} dataKey="value" innerRadius={54} outerRadius={78} paddingAngle={5}>
+                      {ritualPie.map((item, index) => <Cell key={item.name} fill={['#10b981', '#f59e0b', '#cbd5e1'][index]} stroke="none" />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', color: '#1e293b', fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : <Empty />}
+            </div>
+            <div className="space-y-3">
+              {ritualPie.map((item, index) => (
+                <div key={item.name} className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: ['#10b981', '#f59e0b', '#cbd5e1'][index] }} />
+                    <span className="text-xs font-semibold text-slate-700">{item.name}</span>
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">{formatNumber(item.value)}</span>
                 </div>
-                <span className="text-sm font-bold text-slate-800">{formatNumber(item.value)}</span>
-              </div>
-            ))}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
-                <p className="text-lg font-bold text-slate-800">{rituals.couplesWithActiveStreak || 0}</p>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active streaks</p>
-              </div>
-              <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
-                <p className="text-lg font-bold text-slate-800">{rituals.longestStreak || 0}</p>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Longest streak</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        <Card className="p-6 xl:col-span-3">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <SectionTitle icon={Gamepad2} title="Game Activity" subtitle="Tic-Tac-Toe and Wordle completions; puzzles created" color="text-amber-500" />
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-slate-600">
-              {[
-                ['Tic-Tac-Toe', '#f59e0b'],
-                ['Wordle', '#8b5cf6'],
-                ['Puzzles created', '#10b981'],
-              ].map(([label, color]) => (
-                <span key={label} className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full" style={{ background: color }} />
-                  {label}
-                </span>
               ))}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                  <p className="text-lg font-bold text-slate-800">{rituals.couplesWithActiveStreak || 0}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active streaks</p>
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                  <p className="text-lg font-bold text-slate-800">{rituals.longestStreak || 0}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Longest streak</p>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="mt-5 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={gameTrend} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  stroke="#94a3b8"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => val?.split('-')?.slice(2)?.join('/') || val}
-                  minTickGap={timeRange > 30 ? 40 : 20}
-                />
-                <YAxis width={35} stroke="#94a3b8" fontSize={10} allowDecimals={false} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  labelClassName="font-bold text-slate-800 text-xs"
-                />
-                <Area type="monotone" dataKey="Tic-Tac-Toe" stackId="games" stroke="#f59e0b" fill="#f59e0b25" />
-                <Area type="monotone" dataKey="Wordle" stackId="games" stroke="#8b5cf6" fill="#8b5cf625" />
-                <Area type="monotone" dataKey="Puzzles created" stackId="games" stroke="#10b981" fill="#10b98125" />
-              </AreaChart>
-            </ResponsiveContainer>
           </div>
         </Card>
 
-        <Card className="p-6 xl:col-span-2">
+        <Card className="p-6">
           <SectionTitle icon={Flame} title="Feature Adoption" subtitle={`Persisted usage in the last ${timeRange} days`} color="text-orange-500" />
           <div className="mt-5 space-y-3">
             {(data?.featureAdoption || []).map((feature, index) => {

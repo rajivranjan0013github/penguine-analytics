@@ -24,6 +24,7 @@ import {
   Clock,
   Layers,
   HelpCircle,
+  Search,
   Award
 } from 'lucide-react';
 
@@ -579,6 +580,9 @@ const UserModal = ({ userId, onClose }) => {
                       } else if (act.type === 'Jigsaw') {
                         badgeBg = 'bg-blue-50 text-blue-700 border-blue-200';
                         icon = <Puzzle className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Word Search') {
+                        badgeBg = 'bg-cyan-50 text-cyan-700 border-cyan-200';
+                        icon = <Search className="w-3.5 h-3.5" />;
                       } else if (act.type === 'Daily Challenge') {
                         badgeBg = 'bg-rose-50 text-rose-700 border-rose-200';
                         icon = <Flame className="w-3.5 h-3.5" />;

@@ -159,6 +159,7 @@ export const getSummary = async (req, res) => {
         const tictactoes = db.collection('tictactoes');
         const wordles = db.collection('wordles');
         const puzzles = db.collection('jigsawpuzzles');
+        const wordSearchGames = db.collection('wordsearchgames');
         const moodLogs = db.collection('moodlogs');
         const memories = db.collection('memories');
         const subscriptions = db.collection('subscriptions');
@@ -192,6 +193,7 @@ export const getSummary = async (req, res) => {
             tictactoeActivity,
             wordleActivity,
             puzzleActivity,
+            wordSearchActivity,
             ritualTrendData,
             ritualStateCounts,
             streakSummary,
@@ -458,6 +460,25 @@ export const getSummary = async (req, res) => {
                     coupleField: '$analyticsCoupleId',
                 }),
             ]).toArray(),
+            wordSearchGames.aggregate([
+                { $match: { completedAt: { $gte: startDate } } },
+                {
+                    $set: {
+                        analyticsCoupleId: {
+                            $cond: [
+                                { $and: ['$partnerId', { $ne: ['$partnerId', null] }] },
+                                { $concat: [{ $toString: '$creatorId' }, '_', { $toString: '$partnerId' }] },
+                                { $toString: '$creatorId' },
+                            ],
+                        },
+                    },
+                },
+                ...dailyActivityPipeline({
+                    startDate,
+                    dateField: '$completedAt',
+                    coupleField: '$analyticsCoupleId',
+                }),
+            ]).toArray(),
             ritualStatuses.aggregate([
                 { $match: { opensAt: { $gte: startDate } } },
                 {
@@ -569,11 +590,13 @@ export const getSummary = async (req, res) => {
                 tictactoes.countDocuments({ completedAt: { $gte: startDate } }),
                 wordles.countDocuments({ completedAt: { $gte: startDate } }),
                 puzzles.countDocuments({ createdAt: { $gte: startDate } }),
+                wordSearchGames.countDocuments({ completedAt: { $gte: startDate } }),
             ]),
             Promise.all([
                 tictactoes.countDocuments({ completedAt: { $gte: todayStart } }),
                 wordles.countDocuments({ completedAt: { $gte: todayStart } }),
                 puzzles.countDocuments({ createdAt: { $gte: todayStart } }),
+                wordSearchGames.countDocuments({ completedAt: { $gte: todayStart } }),
             ]),
             callDiagnostics.aggregate([
                 {
@@ -709,6 +732,7 @@ export const getSummary = async (req, res) => {
             tictactoeActivity,
             wordleActivity,
             puzzleActivity,
+            wordSearchActivity,
         ], days);
 
         const countByDate = (series) => new Map(series.map((item) => [item._id, item.count || 0]));
@@ -727,6 +751,7 @@ export const getSummary = async (req, res) => {
         const tictactoeCounts = countByDate(tictactoeActivity);
         const wordleCounts = countByDate(wordleActivity);
         const puzzleCounts = countByDate(puzzleActivity);
+        const wordSearchCounts = countByDate(wordSearchActivity);
         const engagementTrendWithBreakdown = engagementTrend.map((item) => ({
             ...item,
             messages: (legacyMessageCounts.get(item.date) || 0) + (v2MessageCounts.get(item.date) || 0),
@@ -738,7 +763,8 @@ export const getSummary = async (req, res) => {
             scribbles: scribbleCounts.get(item.date) || 0,
             games: (tictactoeCounts.get(item.date) || 0)
                 + (wordleCounts.get(item.date) || 0)
-                + (puzzleCounts.get(item.date) || 0),
+                + (puzzleCounts.get(item.date) || 0)
+                + (wordSearchCounts.get(item.date) || 0),
         }));
 
         const todayEngagements = engagementTrendWithBreakdown.at(-1)?.count || 0;
@@ -747,7 +773,7 @@ export const getSummary = async (req, res) => {
         const ritualTotal = ritualStateCounts.reduce((sum, item) => sum + item.count, 0);
         const progress = questionProgressSummary[0] || {};
         const streak = streakSummary[0] || {};
-        const featureNames = ['Question chats', 'Question answers', 'Mutual rituals', 'Mood updates', 'Memories', 'Tic-Tac-Toe', 'Wordle', 'Puzzles created'];
+        const featureNames = ['Question chats', 'Question answers', 'Mutual rituals', 'Mood updates', 'Memories', 'Tic-Tac-Toe', 'Wordle', 'Puzzles created', 'Word Search'];
         const gameCounts = featureCounts.slice(5);
         const callResult = callAnalytics[0] || {};
         const callSummary = callResult.summary?.[0] || {};
@@ -816,6 +842,7 @@ export const getSummary = async (req, res) => {
                     tictactoe: fillMissingDates(tictactoeActivity, days),
                     wordle: fillMissingDates(wordleActivity, days),
                     jigsaw: fillMissingDates(puzzleActivity, days),
+                    wordsearch: fillMissingDates(wordSearchActivity, days),
                 },
             },
             splits: {
@@ -832,6 +859,7 @@ export const getSummary = async (req, res) => {
                     { name: 'Tic-Tac-Toe', value: gameCounts[0] || 0 },
                     { name: 'Wordle', value: gameCounts[1] || 0 },
                     { name: 'Puzzles created', value: gameCounts[2] || 0 },
+                    { name: 'Word Search', value: gameCounts[3] || 0 },
                 ],
                 subscriptions: subscriptionCounts.map((item) => ({ name: item._id || 'unknown', value: item.count })),
             },
