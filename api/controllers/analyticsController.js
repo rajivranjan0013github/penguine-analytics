@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { getCountryForTimezone } from 'countries-and-timezones';
+import { getCountryInfo } from '../../countryMapper.js';
 
 const REPORT_TIMEZONE = '+05:30';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -8,7 +8,7 @@ const summaryCache = new Map();
 
 const clampDays = (value) => {
     const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed)) return 28;
+    if (!Number.isFinite(parsed) || parsed === 0) return 28;
     return Math.min(Math.max(parsed, 1), 365);
 };
 
@@ -94,16 +94,23 @@ const groupTimezonesByCountry = (timezoneCounts) => {
 
     timezoneCounts.forEach((item) => {
         const timezone = item._id || 'unknown';
-        const country = timezone === 'unknown' ? null : getCountryForTimezone(timezone);
-        const key = country?.id || 'unknown';
+        const info = getCountryInfo(timezone);
+        const key = info.code || info.country || 'unknown';
         const current = countries.get(key) || {
-            code: country?.id || null,
-            name: country?.name || 'Unknown country',
+            code: info.code,
+            name: info.country || 'Unknown country',
+            flag: info.flag,
             value: 0,
+            premiumUsers: 0,
+            iosUsers: 0,
+            androidUsers: 0,
             timezones: new Set(),
         };
 
         current.value += item.count || 0;
+        current.premiumUsers += item.premiumCount || 0;
+        current.iosUsers += item.iosCount || 0;
+        current.androidUsers += item.androidCount || 0;
         if (timezone !== 'unknown') current.timezones.add(timezone);
         countries.set(key, current);
     });
@@ -112,7 +119,12 @@ const groupTimezonesByCountry = (timezoneCounts) => {
         .map((item) => ({
             code: item.code,
             name: item.name,
+            flag: item.flag,
             value: item.value,
+            premiumUsers: item.premiumUsers,
+            iosUsers: item.iosUsers,
+            androidUsers: item.androidUsers,
+            conversionRate: item.value > 0 ? Math.round((item.premiumUsers / item.value) * 1000) / 10 : 0,
             timezoneCount: item.timezones.size,
         }))
         .sort((first, second) => second.value - first.value || first.name.localeCompare(second.name));
@@ -157,6 +169,7 @@ export const getSummary = async (req, res) => {
             activeCouples,
             unpairedCouples,
             premiumUsers,
+            rangePremiumUsers,
             dau,
             wau,
             mau,
@@ -196,6 +209,7 @@ export const getSummary = async (req, res) => {
             couples.countDocuments({ status: 'active' }),
             couples.countDocuments({ status: 'unpaired' }),
             users.countDocuments({ isPremium: true }),
+            users.countDocuments({ isPremium: true, createdAt: { $gte: startDate } }),
             users.countDocuments({ lastSeen: { $gte: todayStart } }),
             users.countDocuments({ lastSeen: { $gte: weekStart } }),
             users.countDocuments({ lastSeen: { $gte: monthStart } }),
@@ -222,6 +236,9 @@ export const getSummary = async (req, res) => {
                             ],
                         },
                         count: { $sum: 1 },
+                        premiumCount: { $sum: { $cond: [{ $eq: ['$isPremium', true] }, 1, 0] } },
+                        iosCount: { $sum: { $cond: [{ $eq: ['$platform', 'ios'] }, 1, 0] } },
+                        androidCount: { $sum: { $cond: [{ $eq: ['$platform', 'android'] }, 1, 0] } },
                     },
                 },
                 { $sort: { count: -1, _id: 1 } },
@@ -765,6 +782,9 @@ export const getSummary = async (req, res) => {
                 wau,
                 mau,
                 premiumUsers,
+                rangeUsers: userTrendData.reduce((sum, item) => sum + (item.count || 0), 0),
+                rangeCouples: coupleTrendData.reduce((sum, item) => sum + (item.count || 0), 0),
+                rangePremiumUsers,
                 onboardingCompleted: onboarding.completedStage || 0,
                 onboardingTracked: onboarding.tracked || 0,
                 profilesWithPhoto: onboarding.profile || 0,
@@ -781,6 +801,7 @@ export const getSummary = async (req, res) => {
                 { name: 'Registered users', value: totalUsers },
                 { name: 'Added a nickname', value: onboarding.nicknamePresent || 0 },
                 { name: 'Nickname + profile photo', value: onboarding.profile || 0 },
+                { name: 'Paired with partner', value: onboarding.paired || 0 },
             ],
             trends: {
                 userTrend: fillMissingDates(userTrendData, days),
@@ -915,3 +936,668 @@ export const getSummary = async (req, res) => {
         res.status(500).json({ error: 'Failed to aggregate analytics' });
     }
 };
+
+export const getTimezoneDistribution = async (req, res) => {
+    try {
+        const { days: daysParam, startDate: reqStartDate, endDate: reqEndDate } = req.query;
+        const db = mongoose.connection.db;
+        const users = db.collection('users');
+
+        const matchFilter = {};
+        let dateQuery = null;
+
+        if (reqStartDate && reqEndDate) {
+            const startDate = new Date(`${reqStartDate}T00:00:00.000+05:30`);
+            const endDate = new Date(`${reqEndDate}T23:59:59.999+05:30`);
+            dateQuery = { $gte: startDate, $lte: endDate };
+            matchFilter.createdAt = dateQuery;
+        } else if (daysParam !== undefined && daysParam !== null) {
+            const parsedDays = Number.parseInt(daysParam, 10);
+            if (Number.isFinite(parsedDays) && parsedDays > 0) {
+                dateQuery = { $gte: startOfReportDay(parsedDays) };
+                matchFilter.createdAt = dateQuery;
+            }
+        }
+
+        const timezoneCounts = await users.aggregate([
+            { $match: matchFilter },
+            {
+                $group: {
+                    _id: {
+                        $cond: [
+                            { $gt: [{ $strLenCP: { $ifNull: ['$timezone', ''] } }, 0] },
+                            '$timezone',
+                            'unknown',
+                        ],
+                    },
+                    count: { $sum: 1 },
+                    premiumCount: { $sum: { $cond: [{ $eq: ['$isPremium', true] }, 1, 0] } },
+                    iosCount: { $sum: { $cond: [{ $eq: ['$platform', 'ios'] }, 1, 0] } },
+                    androidCount: { $sum: { $cond: [{ $eq: ['$platform', 'android'] }, 1, 0] } },
+                },
+            },
+            { $sort: { count: -1, _id: 1 } },
+        ]).toArray();
+
+        const totalUsersInRange = dateQuery
+            ? await users.countDocuments({ createdAt: dateQuery })
+            : await users.countDocuments();
+        const premiumUsersInRange = dateQuery
+            ? await users.countDocuments({ isPremium: true, createdAt: dateQuery })
+            : await users.countDocuments({ isPremium: true });
+
+        const countries = groupTimezonesByCountry(timezoneCounts);
+        const conversionRate = totalUsersInRange > 0
+            ? Math.round((premiumUsersInRange / totalUsersInRange) * 1000) / 10
+            : 0;
+
+        res.json({
+            countries,
+            totalUsers: totalUsersInRange,
+            premiumUsers: premiumUsersInRange,
+            conversionRate,
+            topMarket: countries[0] || null,
+        });
+    } catch (err) {
+        console.error('Error in getTimezoneDistribution:', err);
+        res.status(500).json({ error: 'Failed to fetch timezone distribution' });
+    }
+};
+
+export const getCallHealth = async (req, res) => {
+    try {
+        const { days: daysParam, startDate: reqStartDate, endDate: reqEndDate } = req.query;
+        const db = mongoose.connection.db;
+        const callDiagnostics = db.collection('calldiagnostics');
+
+        let startDate;
+        let endDate = new Date();
+        let days = 28;
+        let isCustom = false;
+
+        if (reqStartDate && reqEndDate) {
+            startDate = new Date(`${reqStartDate}T00:00:00.000+05:30`);
+            endDate = new Date(`${reqEndDate}T23:59:59.999+05:30`);
+            isCustom = true;
+            const diffDays = Math.ceil((endDate - startDate) / DAY_MS);
+            days = Math.max(diffDays, 1);
+        } else if (daysParam !== undefined && daysParam !== null) {
+            const parsedDays = Number.parseInt(daysParam, 10);
+            if (Number.isFinite(parsedDays) && parsedDays > 0) {
+                days = Math.min(Math.max(parsedDays, 1), 30); // diagnostics expire after 30 days
+                startDate = startOfReportDay(days);
+            } else {
+                days = 30;
+                startDate = startOfReportDay(30);
+            }
+        } else {
+            days = 28;
+            startDate = startOfReportDay(28);
+        }
+
+        const dateMatch = isCustom
+            ? { analyticsDate: { $gte: startDate, $lte: endDate } }
+            : { analyticsDate: { $gte: startDate } };
+
+        const [callAnalytics] = await callDiagnostics.aggregate([
+            {
+                $set: {
+                    analyticsDate: { $ifNull: ['$startedAt', '$createdAt'] },
+                    connectedReport: {
+                        $cond: [{ $ne: [{ $ifNull: ['$timeToConnectedMs', null] }, null] }, 1, 0],
+                    },
+                    successfulMediaReport: {
+                        $cond: [
+                            {
+                                $and: [
+                                    { $ne: [{ $ifNull: ['$timeToConnectedMs', null] }, null] },
+                                    {
+                                        $or: [
+                                            {
+                                                $and: [
+                                                    { $gt: [{ $ifNull: ['$outboundAudioBytes', 0] }, 0] },
+                                                    { $gt: [{ $ifNull: ['$inboundAudioBytes', 0] }, 0] },
+                                                ],
+                                            },
+                                            {
+                                                $and: [
+                                                    { $gt: [{ $ifNull: ['$outboundVideoBytes', 0] }, 0] },
+                                                    { $gt: [{ $ifNull: ['$inboundVideoBytes', 0] }, 0] },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                            1,
+                            0,
+                        ],
+                    },
+                },
+            },
+            { $match: dateMatch },
+            {
+                $group: {
+                    _id: '$callId',
+                    date: { $min: '$analyticsDate' },
+                    reports: { $sum: 1 },
+                    reporters: { $addToSet: '$reporterId' },
+                    partners: { $addToSet: '$partnerId' },
+                    connected: { $max: '$connectedReport' },
+                    successful: { $max: '$successfulMediaReport' },
+                    outcomes: { $addToSet: '$outcome' },
+                    failureCodes: { $addToSet: '$failureCode' },
+                    platforms: { $addToSet: '$platform' },
+                    connectionTimeMs: {
+                        $max: {
+                            $cond: [
+                                { $ne: [{ $ifNull: ['$timeToConnectedMs', null] }, null] },
+                                '$timeToConnectedMs',
+                                null,
+                            ],
+                        },
+                    },
+                },
+            },
+            {
+                $set: {
+                    twoSided: { $cond: [{ $gte: [{ $size: '$reporters' }, 2] }, 1, 0] },
+                    callUsers: {
+                        $filter: {
+                            input: {
+                                $map: {
+                                    input: { $setUnion: ['$reporters', '$partners'] },
+                                    as: 'u',
+                                    in: {
+                                        $cond: [
+                                            { $ne: ['$$u', null] },
+                                            { $toString: '$$u' },
+                                            null,
+                                        ],
+                                    },
+                                },
+                            },
+                            as: 'u',
+                            cond: {
+                                $and: [
+                                    { $ne: ['$$u', null] },
+                                    { $ne: ['$$u', ''] },
+                                    { $ne: ['$$u', 'null'] },
+                                    { $ne: ['$$u', 'undefined'] },
+                                ],
+                            },
+                        },
+                    },
+                    status: {
+                        $switch: {
+                            branches: [
+                                { case: { $eq: ['$successful', 1] }, then: 'successful' },
+                                { case: { $eq: ['$connected', 1] }, then: 'connected_no_media' },
+                                { case: { $in: ['failed', '$outcomes'] }, then: 'failed' },
+                                { case: { $in: ['rejected', '$outcomes'] }, then: 'rejected' },
+                                { case: { $in: ['missed', '$outcomes'] }, then: 'missed' },
+                                { case: { $in: ['cancelled', '$outcomes'] }, then: 'cancelled' },
+                            ],
+                            default: 'ended_unconfirmed',
+                        },
+                    },
+                },
+            },
+            {
+                $facet: {
+                    summary: [
+                        {
+                            $group: {
+                                _id: null,
+                                attempts: { $sum: 1 },
+                                connected: { $sum: '$connected' },
+                                successful: { $sum: '$successful' },
+                                connectedNoMedia: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'connected_no_media'] }, 1, 0] },
+                                },
+                                missed: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'missed'] }, 1, 0] },
+                                },
+                                rejected: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] },
+                                },
+                                failed: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+                                },
+                                cancelled: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+                                },
+                                diagnosticReports: { $sum: '$reports' },
+                                twoSidedCalls: { $sum: '$twoSided' },
+                                averageConnectionTimeMs: { $avg: '$connectionTimeMs' },
+                                allUsers: { $push: '$callUsers' },
+                            },
+                        },
+                        {
+                            $project: {
+                                attempts: 1,
+                                connected: 1,
+                                successful: 1,
+                                connectedNoMedia: 1,
+                                missed: 1,
+                                rejected: 1,
+                                failed: 1,
+                                cancelled: 1,
+                                diagnosticReports: 1,
+                                twoSidedCalls: 1,
+                                averageConnectionTimeMs: 1,
+                                uniqueUsers: {
+                                    $size: {
+                                        $reduce: {
+                                            input: { $ifNull: ['$allUsers', []] },
+                                            initialValue: [],
+                                            in: { $setUnion: ['$$value', { $ifNull: ['$$this', []] }] },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    ],
+                    trend: [
+                        {
+                            $group: {
+                                _id: {
+                                    $dateToString: {
+                                        format: '%Y-%m-%d',
+                                        date: '$date',
+                                        timezone: REPORT_TIMEZONE,
+                                    },
+                                },
+                                attempts: { $sum: 1 },
+                                connected: { $sum: '$connected' },
+                                successful: { $sum: '$successful' },
+                                connectedNoMedia: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'connected_no_media'] }, 1, 0] },
+                                },
+                                missed: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'missed'] }, 1, 0] },
+                                },
+                                rejected: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] },
+                                },
+                                failed: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+                                },
+                                cancelled: {
+                                    $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+                                },
+                                allUsers: { $push: '$callUsers' },
+                            },
+                        },
+                        {
+                            $project: {
+                                attempts: 1,
+                                connected: 1,
+                                successful: 1,
+                                connectedNoMedia: 1,
+                                missed: 1,
+                                rejected: 1,
+                                failed: 1,
+                                cancelled: 1,
+                                uniqueUsers: {
+                                    $size: {
+                                        $reduce: {
+                                            input: { $ifNull: ['$allUsers', []] },
+                                            initialValue: [],
+                                            in: { $setUnion: ['$$value', { $ifNull: ['$$this', []] }] },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        { $sort: { _id: 1 } },
+                    ],
+                    statuses: [
+                        { $group: { _id: '$status', count: { $sum: 1 } } },
+                        { $sort: { count: -1 } },
+                    ],
+                    failures: [
+                        { $unwind: '$failureCodes' },
+                        { $match: { failureCodes: { $nin: [null, 'remote_ended'] } } },
+                        { $group: { _id: '$failureCodes', count: { $sum: 1 } } },
+                        { $sort: { count: -1 } },
+                    ],
+                    platforms: [
+                        { $unwind: '$platforms' },
+                        { $match: { platforms: { $nin: [null, 'unknown'] } } },
+                        { $group: { _id: '$platforms', count: { $sum: 1 } } },
+                        { $sort: { count: -1 } },
+                    ],
+                    recentCalls: [
+                        { $sort: { date: -1 } },
+                        { $limit: 30 },
+                        {
+                            $project: {
+                                callId: '$_id',
+                                date: 1,
+                                status: 1,
+                                reports: 1,
+                                connected: 1,
+                                successful: 1,
+                                twoSided: 1,
+                                connectionTimeMs: 1,
+                                outcomes: 1,
+                                failureCodes: {
+                                    $filter: {
+                                        input: '$failureCodes',
+                                        as: 'code',
+                                        cond: {
+                                            $and: [
+                                                { $ne: ['$$code', null] },
+                                                { $ne: ['$$code', 'remote_ended'] },
+                                            ],
+                                        },
+                                    },
+                                },
+                                platforms: {
+                                    $filter: {
+                                        input: '$platforms',
+                                        as: 'p',
+                                        cond: {
+                                            $and: [
+                                                { $ne: ['$$p', null] },
+                                                { $ne: ['$$p', 'unknown'] },
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        ]).toArray();
+
+        const callResult = callAnalytics || {};
+        const callSummary = callResult.summary?.[0] || {};
+        const callTrendByDate = new Map((callResult.trend || []).map((item) => [item._id, item]));
+
+        let callTrend = [];
+        if (isCustom) {
+            const cur = new Date(startDate);
+            while (cur <= endDate) {
+                const key = dateKey(cur);
+                const day = callTrendByDate.get(key) || {};
+                callTrend.push({
+                    date: key,
+                    attempts: day.attempts || 0,
+                    connected: day.connected || 0,
+                    successful: day.successful || 0,
+                    connectedNoMedia: day.connectedNoMedia || 0,
+                    missed: day.missed || 0,
+                    rejected: day.rejected || 0,
+                    failed: day.failed || 0,
+                    cancelled: day.cancelled || 0,
+                    uniqueUsers: day.uniqueUsers || 0,
+                });
+                cur.setDate(cur.getDate() + 1);
+            }
+        } else {
+            callTrend = fillMissingDates([], days).map((item) => {
+                const day = callTrendByDate.get(item.date) || {};
+                return {
+                    date: item.date,
+                    attempts: day.attempts || 0,
+                    connected: day.connected || 0,
+                    successful: day.successful || 0,
+                    connectedNoMedia: day.connectedNoMedia || 0,
+                    missed: day.missed || 0,
+                    rejected: day.rejected || 0,
+                    failed: day.failed || 0,
+                    cancelled: day.cancelled || 0,
+                    uniqueUsers: day.uniqueUsers || 0,
+                };
+            });
+        }
+
+        const attempts = callSummary.attempts || 0;
+        const connected = callSummary.connected || 0;
+        const successful = callSummary.successful || 0;
+        const connectedNoMedia = callSummary.connectedNoMedia || 0;
+        const missed = callSummary.missed || 0;
+        const rejected = callSummary.rejected || 0;
+        const failed = callSummary.failed || 0;
+        const cancelled = callSummary.cancelled || 0;
+        const uniqueUsers = callSummary.uniqueUsers || 0;
+
+        res.json({
+            attempts,
+            connected,
+            successful,
+            connectedNoMedia,
+            missed,
+            rejected,
+            failed,
+            cancelled,
+            uniqueUsers,
+            unsuccessful: Math.max(attempts - successful, 0),
+            connectionRate: percentage(connected, attempts),
+            successRate: percentage(successful, attempts),
+            missedRate: percentage(missed, attempts),
+            rejectedRate: percentage(rejected, attempts),
+            failedRate: percentage(failed, attempts),
+            diagnosticReports: callSummary.diagnosticReports || 0,
+            twoSidedCalls: callSummary.twoSidedCalls || 0,
+            twoSidedCoverage: percentage(callSummary.twoSidedCalls || 0, attempts),
+            averageConnectionTimeMs: Math.round(callSummary.averageConnectionTimeMs || 0),
+            trend: callTrend,
+            statuses: (callResult.statuses || []).map((item) => ({
+                name: item._id,
+                value: item.count,
+            })),
+            failures: (callResult.failures || []).map((item) => ({
+                name: item._id,
+                value: item.count,
+            })),
+            platforms: (callResult.platforms || []).map((item) => ({
+                name: item._id,
+                value: item.count,
+            })),
+            recentCalls: callResult.recentCalls || [],
+            retentionDays: 30,
+            definition: 'Connected with media bytes sent and received in at least one participant diagnostic',
+            caveat: 'Client-reported diagnostics only. Calls without a saved diagnostic are not included, and records expire after 30 days.',
+            range: {
+                startDate,
+                endDate,
+                days,
+                isCustom,
+            },
+        });
+    } catch (err) {
+        console.error('Error in getCallHealth:', err);
+        res.status(500).json({ error: 'Failed to fetch call health diagnostics' });
+    }
+};
+
+export const getQuestionEngagement = async (req, res) => {
+    try {
+        const { days: daysParam, startDate: reqStartDate, endDate: reqEndDate } = req.query;
+        const db = mongoose.connection.db;
+        const questionAnswers = db.collection('questionanswerv2');
+        const questionProgress = db.collection('questionprogressv2');
+        const questionChatMessages = db.collection('questionchatmessagev2');
+
+        let startDate;
+        let endDate = new Date();
+        let days = 28;
+        let isCustom = false;
+
+        if (reqStartDate && reqEndDate) {
+            startDate = new Date(`${reqStartDate}T00:00:00.000+05:30`);
+            endDate = new Date(`${reqEndDate}T23:59:59.999+05:30`);
+            isCustom = true;
+            const diffDays = Math.ceil((endDate - startDate) / DAY_MS);
+            days = Math.max(diffDays, 1);
+        } else if (daysParam !== undefined && daysParam !== null) {
+            const parsedDays = Number.parseInt(daysParam, 10);
+            days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(Math.max(parsedDays, 1), 365) : 28;
+            startDate = startOfReportDay(days);
+        } else {
+            days = 28;
+            startDate = startOfReportDay(28);
+        }
+
+        const dateMatch = isCustom
+            ? { createdAt: { $gte: startDate, $lte: endDate } }
+            : { createdAt: { $gte: startDate } };
+
+        const [
+            totalAnswers,
+            uniqueStats,
+            progressStats,
+            dailyAnswersTrend,
+            topicBreakdown,
+            formatBreakdown,
+            chatMessageCount,
+            recentAnswers,
+        ] = await Promise.all([
+            questionAnswers.countDocuments(dateMatch),
+            questionAnswers.aggregate([
+                { $match: dateMatch },
+                {
+                    $group: {
+                        _id: null,
+                        uniqueUsers: { $addToSet: '$userId' },
+                        uniqueCouples: { $addToSet: '$coupleId' },
+                    },
+                },
+            ]).toArray(),
+            questionProgress.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalSeen: { $sum: { $size: { $ifNull: ['$seenQuestionIds', []] } } },
+                        totalSkipped: { $sum: { $size: { $ifNull: ['$skippedQuestionIds', []] } } },
+                        totalAnswered: { $sum: { $size: { $ifNull: ['$answeredQuestionIds', []] } } },
+                        completedSets: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$completedAt', null] }, null] }, 1, 0] } },
+                        startedSets: { $sum: 1 },
+                    },
+                },
+            ]).toArray(),
+            questionAnswers.aggregate(dailyActivityPipeline({
+                startDate,
+                dateField: '$createdAt',
+                coupleField: '$coupleId',
+                match: isCustom ? { createdAt: { $lte: endDate } } : {},
+            })).toArray(),
+            questionAnswers.aggregate([
+                { $match: dateMatch },
+                {
+                    $group: {
+                        _id: { $ifNull: ['$topicId', 'unknown'] },
+                        count: { $sum: 1 },
+                        users: { $addToSet: '$userId' },
+                        couples: { $addToSet: '$coupleId' },
+                    },
+                },
+                { $sort: { count: -1 } },
+            ]).toArray(),
+            questionAnswers.aggregate([
+                { $match: dateMatch },
+                {
+                    $group: {
+                        _id: { $ifNull: ['$format', 'choice'] },
+                        count: { $sum: 1 },
+                        users: { $addToSet: '$userId' },
+                    },
+                },
+                { $sort: { count: -1 } },
+            ]).toArray(),
+            questionChatMessages.countDocuments(dateMatch),
+            questionAnswers.find(dateMatch)
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .project({
+                    topicId: 1,
+                    format: 1,
+                    setId: 1,
+                    createdAt: 1,
+                    coupleId: 1,
+                })
+                .toArray(),
+        ]);
+
+        const unique = uniqueStats[0] || {};
+        const progress = progressStats[0] || {};
+        const dailyTrend = fillMissingDates(dailyAnswersTrend, days);
+
+        const TOPIC_TITLES = {
+            relationship: 'Relationship',
+            sexlove: 'Sex & Love',
+            coupletherapy: 'Couple Therapy',
+            longdistance: 'Long Distance',
+            naughty: 'Naughty',
+            gossip: 'Gossip',
+            money: 'Money',
+            gettoknow: 'Get To Know',
+            travel: 'Travel',
+            family: 'Family',
+            future: 'Future',
+        };
+
+        const topics = topicBreakdown.map((item) => ({
+            id: item._id,
+            name: TOPIC_TITLES[item._id] || item._id,
+            count: item.count,
+            uniqueUsers: item.users?.length || 0,
+            uniqueCouples: item.couples?.length || 0,
+            share: totalAnswers > 0 ? Math.round((item.count / totalAnswers) * 1000) / 10 : 0,
+        }));
+
+        const formats = formatBreakdown.map((item) => ({
+            name: item._id,
+            count: item.count,
+            uniqueUsers: item.users?.length || 0,
+            share: totalAnswers > 0 ? Math.round((item.count / totalAnswers) * 1000) / 10 : 0,
+        }));
+
+        const answerRate = progress.totalSeen > 0
+            ? Math.round((progress.totalAnswered / progress.totalSeen) * 1000) / 10
+            : 0;
+
+        const completionRate = progress.startedSets > 0
+            ? Math.round((progress.completedSets / progress.startedSets) * 1000) / 10
+            : 0;
+
+        res.json({
+            metrics: {
+                totalAnswers,
+                uniqueCouples: unique.uniqueCouples?.length || 0,
+                uniqueUsers: unique.uniqueUsers?.length || 0,
+                totalSeen: progress.totalSeen || 0,
+                totalSkipped: progress.totalSkipped || 0,
+                startedSets: progress.startedSets || 0,
+                completedSets: progress.completedSets || 0,
+                answerRate,
+                completionRate,
+                chatMessages: chatMessageCount,
+            },
+            trend: dailyTrend,
+            topics,
+            formats,
+            recentAnswers: recentAnswers.map((item) => ({
+                id: item._id,
+                topicId: item.topicId,
+                topicName: TOPIC_TITLES[item.topicId] || item.topicId,
+                format: item.format,
+                createdAt: item.createdAt,
+            })),
+            range: {
+                days,
+                startDate,
+                endDate,
+                isCustom,
+            },
+        });
+    } catch (err) {
+        console.error('Error in getQuestionEngagement:', err);
+        res.status(500).json({ error: 'Failed to fetch question engagement data' });
+    }
+};
+

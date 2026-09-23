@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   User as UserIcon, 
   Crown, 
@@ -8,306 +9,695 @@ import {
   Activity,
   MessageSquare,
   Gamepad2,
-  Loader2
+  Loader2,
+  Copy,
+  Check,
+  Flame,
+  Trophy,
+  Calendar,
+  Sparkles,
+  Smile,
+  Camera,
+  Puzzle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Layers,
+  HelpCircle,
+  Award
 } from 'lucide-react';
 
 import { fetchUserDetails } from './api';
+import { getUserCountry } from './countryMapper.js';
 
 const UserModal = ({ userId, onClose }) => {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [expandedCategory, setExpandedCategory] = useState(null);
-    const [expandedActivity, setExpandedActivity] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeFilterTab, setActiveFilterTab] = useState('all');
+  const [expandedActivityId, setExpandedActivityId] = useState(null);
+  const [copiedKey, setCopiedKey] = useState(null);
 
-    useEffect(() => {
-        const handleFetchUserDetails = async () => {
-            if (!userId) return;
-            setLoading(true);
-            try {
-                const data = await fetchUserDetails(userId);
-                setUser(data);
-            } catch (err) {
-                console.error('Failed to fetch user details:', err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        handleFetchUserDetails();
-    }, [userId]);
-
-    const timeAgo = (date) => {
-        if (!date) return 'Never';
-        const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-        if (seconds < 60) return `${seconds}s ago`;
-        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-        return new Date(date).toLocaleDateString();
+  // Fetch user details on userId change
+  useEffect(() => {
+    if (!userId) return;
+    let isMounted = true;
+    const handleFetchUserDetails = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchUserDetails(userId);
+        if (isMounted) setUser(data);
+      } catch (err) {
+        console.error('Failed to fetch user details:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
     };
+    handleFetchUserDetails();
+    return () => { isMounted = false; };
+  }, [userId]);
 
-    if (!userId) return null;
+  // Keyboard Escape listener & body scroll lock
+  useEffect(() => {
+    if (!userId) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
-    return (
-        <div 
-            className="fixed inset-0 z-[60] flex items-center justify-center backdrop-blur-md bg-black/90 animate-in fade-in duration-500"
-            onClick={onClose}
-        >
-            <div 
-                className="bg-[#111111] w-full h-full md:h-screen flex flex-col animate-in slide-in-from-bottom duration-500 relative"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Header/Close */}
-                <button 
-                    onClick={onClose}
-                    className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all z-10 active:scale-90"
-                >
-                    <X className="w-5 h-5" />
-                </button>
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [userId, onClose]);
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10 space-y-8">
-                    {loading ? (
-                        <div className="flex flex-col items-center justify-center py-24 gap-4">
-                            <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-                            <p className="text-white/40 font-bold uppercase tracking-widest text-xs">Fetching Intel...</p>
-                        </div>
-                    ) : user ? (
-                        <>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
-                                {/* Side Profile */}
-                                <div className="space-y-6">
-                                    <div className="bg-[#242424] p-8 rounded-[2rem] border border-white/5 relative overflow-hidden group">
-                                        <div className="absolute -top-4 -right-4 opacity-5 group-hover:scale-110 transition-transform duration-700">
-                                            <UserIcon className="w-32 h-32" />
-                                        </div>
-                                        <div className="relative flex flex-col items-center text-center">
-                                            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-xl shadow-indigo-500/20 mb-4 border-b-4 border-black/20">
-                                                {user.name?.[0]?.toUpperCase() || '?'}
-                                            </div>
-                                            <h2 className="text-xl font-black text-white tracking-tight leading-tight">{user.name || 'Anonymous'}</h2>
-                                            <p className="text-white/40 text-[11px] font-bold mt-1 break-all uppercase tracking-wider">{user.email}</p>
-                                        </div>
+  // Copy to clipboard helper
+  const handleCopy = (text, key) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
-                                        <div className="mt-8 space-y-3 pt-3">
-                                            <div className="flex flex-col gap-2">
-                                                {user.isPremium && (
-                                                    <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5">
-                                                        <Crown className="w-3.5 h-3.5" /> Premium
-                                                    </div>
-                                                )}
-                                                <div className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 border ${
-                                                    user.platform === 'ios' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                }`}>
-                                                    <Smartphone className="w-3.5 h-3.5" /> {user.platform || 'Unknown'}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="pt-4 border-t border-white/5 space-y-2">
-                                                <div className="flex items-center justify-between text-[11px]">
-                                                    <span className="text-white/30 font-bold uppercase tracking-wider">Joined</span>
-                                                    <span className="text-white font-black">{new Date(user.createdAt).toLocaleDateString()}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[11px]">
-                                                    <span className="text-white/30 font-bold uppercase tracking-wider">Last active</span>
-                                                    <span className="text-white font-black">{timeAgo(user.lastSeen)}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[11px]">
-                                                    <span className="text-white/30 font-bold uppercase tracking-wider">App</span>
-                                                    <span className="text-white font-black">
-                                                        {user.appVersion ? `v${user.appVersion}` : 'Unknown'}
-                                                        {user.appBuildNumber ? ` (${user.appBuildNumber})` : ''}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[11px]">
-                                                    <span className="text-white/30 font-bold uppercase tracking-wider">Language</span>
-                                                    <span className="text-white font-black uppercase">{user.preferredLanguage || 'Unknown'}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+  // Human-readable relative time
+  const timeAgo = (date) => {
+    if (!date) return 'Never';
+    const parsed = new Date(date);
+    if (isNaN(parsed.getTime())) return 'Never';
+    const seconds = Math.floor((new Date() - parsed) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
-                                    {/* Partner Details */}
-                                    {user.partnerData ? (
-                                        <div className="bg-rose-500/5 p-8 rounded-[2rem] border border-rose-500/10 relative overflow-hidden animate-in fade-in slide-in-from-left duration-700">
-                                            <div className="absolute -top-4 -right-4 opacity-5 text-rose-500">
-                                                <Heart className="w-32 h-32" />
-                                            </div>
-                                            <div className="relative">
-                                                <div className="flex items-center gap-2 mb-4">
-                                                    <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-500">
-                                                        <Heart className="w-4 h-4" />
-                                                    </div>
-                                                    <h3 className="text-[10px] font-black text-rose-500/60 uppercase tracking-widest">Linked Intelligence</h3>
-                                                </div>
-                                                
-                                                <div className="flex flex-col items-center text-center">
-                                                    <div className="w-16 h-16 rounded-2xl bg-rose-500 flex items-center justify-center text-xl font-bold text-white shadow-xl shadow-rose-500/20 mb-3 border-b-4 border-black/20">
-                                                        {user.partnerData.name?.[0]?.toUpperCase() || '?'}
-                                                    </div>
-                                                    <h2 className="text-lg font-black text-white tracking-tight leading-tight">{user.partnerData.name || 'Partner Account'}</h2>
-                                                    <p className="text-white/40 text-[10px] font-bold mt-1 break-all uppercase tracking-wider">{user.partnerData.email}</p>
-                                                    
-                                                    <div className="mt-4 flex gap-2 w-full justify-center">
-                                                        <span className="px-2 py-1 bg-rose-500/10 border border-rose-500/20 rounded-md text-[9px] font-black text-rose-500 uppercase tracking-widest">Paired</span>
-                                                        <span className="px-2 py-1 bg-white/5 border border-white/10 rounded-md text-[9px] font-black text-white/40 uppercase tracking-widest">{user.partnerData.platform || 'Unknown'} Status</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 flex flex-col items-center justify-center text-center opacity-40">
-                                            <Heart className="w-8 h-8 text-white/10 mb-2" />
-                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">No Active Link</p>
-                                        </div>
-                                    )}
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    const parsed = new Date(date);
+    if (isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
 
-                                    <div className="bg-[#242424] p-5 rounded-[2rem] border border-white/5 grid grid-cols-2 gap-3">
-                                        {[
-                                            ['Conversations', user.totals?.conversations, 'text-indigo-400'],
-                                            ['Question answers', user.totals?.questionAnswers, 'text-sky-400'],
-                                            ['Rituals', user.totals?.completedRituals, 'text-rose-400'],
-                                            ['Games', user.totals?.completedGames, 'text-amber-400'],
-                                            ['Mood updates', user.totals?.moodUpdates, 'text-emerald-400'],
-                                            ['Memories', user.totals?.memories, 'text-purple-400'],
-                                        ].map(([label, value, color]) => (
-                                            <div key={label} className="rounded-xl bg-white/[0.025] p-3 text-center">
-                                                <p className="text-[8px] font-black text-white/20 uppercase tracking-wider mb-1">{label}</p>
-                                                <p className={`text-xl font-black leading-none ${color}`}>{value || 0}</p>
-                                            </div>
-                                        ))}
-                                        {user.streak && (
-                                            <div className="col-span-2 rounded-xl border border-rose-500/10 bg-rose-500/5 p-3 text-center">
-                                                <p className="text-[8px] font-black uppercase tracking-wider text-rose-400/60">Current ritual streak</p>
-                                                <p className="mt-1 text-xl font-black text-rose-400">{user.streak.current} days</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+  // Combine and normalize activities for chronological rendering
+  const combinedActivities = useMemo(() => {
+    if (!user) return [];
+    const list = [];
+    (user.activities?.answers || []).forEach((a, idx) => {
+      list.push({
+        ...a,
+        _id: a._id || `ans-${idx}`,
+        _filterCat: 'answers',
+        _time: new Date(a.createdAt || a.completedAt || a.answeredAt || 0)
+      });
+    });
+    (user.activities?.games || []).forEach((g, idx) => {
+      const isMoodOrMemory = g.type === 'Mood Update' || g.type === 'Memory';
+      list.push({
+        ...g,
+        _id: g._id || `game-${idx}`,
+        _filterCat: isMoodOrMemory ? 'moods' : 'games',
+        _time: new Date(g.createdAt || g.completedAt || g.answeredAt || g.solvedAt || g.updatedAt || 0)
+      });
+    });
+    return list.sort((a, b) => b._time - a._time);
+  }, [user]);
 
-                                {/* Feed Column */}
-                                <div className="md:col-span-2 space-y-6 flex flex-col">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Activity className="w-4 h-4 text-white/40" />
-                                        <h3 className="text-xs font-black text-white/40 uppercase tracking-[0.2em]">Activity Intelligence</h3>
-                                    </div>
-                                    
-                                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar flex-1">
-                                        {(!user.activities?.answers?.length && !user.activities?.games?.length) ? (
-                                            <div className="py-20 text-center bg-white/5 rounded-3xl border border-dashed border-white/5">
-                                                <p className="text-white/20 font-bold text-sm italic">Ghost status. No activities yet.</p>
-                                            </div>
-                                        ) : (
-                                            (() => {
-                                                const allActivities = [...(user.activities?.answers || []), ...(user.activities?.games || [])];
-                                                const grouped = allActivities.reduce((acc, act) => {
-                                                    const cat = act.type || 'Generic Activity';
-                                                    if (!acc[cat]) acc[cat] = [];
-                                                    acc[cat].push(act);
-                                                    return acc;
-                                                }, {});
+  // Filter activities based on tab
+  const filteredActivities = useMemo(() => {
+    if (activeFilterTab === 'all') return combinedActivities;
+    return combinedActivities.filter((item) => item._filterCat === activeFilterTab);
+  }, [combinedActivities, activeFilterTab]);
 
-                                                return Object.entries(grouped).map(([category, items], idx) => (
-                                                    <div key={idx} className="space-y-3">
-                                                        {/* Category Header */}
-                                                        <div 
-                                                            onClick={() => setExpandedCategory(expandedCategory === category ? null : category)}
-                                                            className={`p-5 rounded-[2rem] border transition-all cursor-pointer flex items-center justify-between group/cat ${
-                                                                expandedCategory === category 
-                                                                    ? 'bg-indigo-500/10 border-indigo-500/20 shadow-lg shadow-indigo-500/5' 
-                                                                    : 'bg-[#242424] border-white/5 hover:border-white/20'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-4">
-                                                                <div className={`p-2.5 rounded-2xl ${
-                                                                    category === 'Answer Session' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-purple-500/20 text-purple-400'
-                                                                }`}>
-                                                                    {category === 'Answer Session' ? <MessageSquare className="w-5 h-5" /> : <Gamepad2 className="w-5 h-5" />}
-                                                                </div>
-                                                                <div>
-                                                                    <h4 className="text-sm font-black text-white uppercase tracking-tight">{category}</h4>
-                                                                    <p className="text-[10px] font-bold text-indigo-500/60 uppercase tracking-widest">{items.length} Volume Record</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/5 text-[10px] font-black text-white/40 uppercase tracking-widest">
-                                                                    {category === 'TicTacToe' ? `Total Matches: ${items.length}` : 'Click to Audit'}
-                                                                </div>
-                                                                <Activity className={`w-4 h-4 text-white/10 group-hover/cat:text-white/30 transition-all ${expandedCategory === category ? 'rotate-180 text-indigo-500/50' : ''}`} />
-                                                            </div>
-                                                        </div>
+  const activityCounts = useMemo(() => {
+    const all = combinedActivities.length;
+    const answers = combinedActivities.filter(a => a._filterCat === 'answers').length;
+    const games = combinedActivities.filter(a => a._filterCat === 'games').length;
+    const moods = combinedActivities.filter(a => a._filterCat === 'moods').length;
+    return { all, answers, games, moods };
+  }, [combinedActivities]);
 
-                                                        {/* Expanded Items */}
-                                                        {expandedCategory === category && (
-                                                            <div className="pl-6 space-y-3 border-l-2 border-indigo-500/20 ml-8 animate-in slide-in-from-top-4 duration-300">
-                                                                {items
-                                                                    .sort((a, b) => new Date(b.createdAt || b.completedAt || b.answeredAt || b.solvedAt) - new Date(a.createdAt || a.completedAt || a.answeredAt || a.solvedAt))
-                                                                    .map((activity, sidx) => (
-                                                                        <div 
-                                                                            key={sidx} 
-                                                                            onClick={() => activity.type === 'Answer Session' ? setExpandedActivity(expandedActivity === `${category}-${sidx}` ? null : `${category}-${sidx}`) : null}
-                                                                            className={`bg-[#242424]/50 border border-white/5 p-4 rounded-2xl transition-all ${
-                                                                                activity.type === 'Answer Session' ? 'cursor-pointer hover:border-white/10' : ''
-                                                                            } ${expandedActivity === `${category}-${sidx}` ? 'ring-2 ring-indigo-500/30' : ''}`}
-                                                                        >
-                                                                            <div className="flex items-center justify-between mb-2">
-                                                                                {activity.questionCategory && (
-                                                                                    <span className="px-2 py-0.5 rounded-md bg-white/5 text-white/40 text-[9px] font-black uppercase tracking-widest border border-white/5">
-                                                                                        {activity.questionCategory}
-                                                                                    </span>
-                                                                                )}
-                                                                                <span className="text-[9px] text-white/20 font-black uppercase tracking-wider ml-auto">
-                                                                                    {timeAgo(activity.createdAt || activity.completedAt || activity.answeredAt)}
-                                                                                </span>
-                                                                            </div>
-                                                                            
-                                                                            <div className="flex flex-col gap-1">
-                                                                                <p className={`text-[11px] font-bold leading-tight ${activity.type === 'Answer Session' ? 'text-indigo-400' : 'text-purple-400'}`}>
-                                                                                    {activity.text || activity.questionText}
-                                                                                </p>
-                                                                                {activity.type === 'Answer Session' && (
-                                                                                    <p className="text-[10px] text-white/50 leading-relaxed italic border-l border-white/10 pl-2 mt-1">
-                                                                                        "{activity.answer || activity.content || 'No content'}"
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
+  // Calculate paired days if partner connected
+  const pairedDays = useMemo(() => {
+    if (!user?.partnerData) return null;
+    const connDate = user.couple?.connectionDate || user.connectionDate || user.partnerData.createdAt;
+    if (!connDate) return null;
+    const days = Math.floor((new Date() - new Date(connDate)) / (1000 * 60 * 60 * 24));
+    return Math.max(0, days);
+  }, [user]);
 
-                                                                            {expandedActivity === `${category}-${sidx}` && activity.messages && (
-                                                                                <div className="mt-4 pt-4 border-t border-white/5 space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                                                                                    {activity.messages.map((m, midx) => (
-                                                                                        <div key={midx} className={`flex flex-col ${m.senderId.toString() === userId.toString() ? 'items-end' : 'items-start'}`}>
-                                                                                            <div className={`max-w-[90%] p-2.5 rounded-xl text-[10px] font-medium leading-relaxed ${
-                                                                                                m.senderId.toString() === userId.toString() 
-                                                                                                    ? 'bg-indigo-500 text-white rounded-tr-none' 
-                                                                                                    : 'bg-white/5 text-white/70 rounded-tl-none border border-white/5'
-                                                                                            }`}>
-                                                                                                {m.content}
-                                                                                            </div>
-                                                                                            <p className="text-[8px] text-white/20 font-bold mt-0.5 uppercase tracking-tighter">
-                                                                                                {m.senderId.toString() === userId.toString() ? 'User' : 'Partner'} • {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                                            </p>
-                                                                                        </div>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ));
-                                            })()
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="py-24 text-center">
-                            <p className="text-white font-bold">Signal lost. Could not load user intel.</p>
-                        </div>
-                    )}
-                </div>
+  // Is user recently active (under 30 minutes)
+  const isRecentlyActive = useMemo(() => {
+    if (!user?.lastSeen) return false;
+    const diffMs = new Date() - new Date(user.lastSeen);
+    return diffMs < 30 * 60 * 1000;
+  }, [user]);
+
+  if (!userId) return null;
+
+  const countryInfo = user ? getUserCountry(user) : { flag: '🌐', country: 'Unknown' };
+
+  return createPortal(
+    <div 
+      className="fixed inset-0 z-[100] bg-slate-50 flex flex-col overflow-hidden text-slate-800"
+    >
+      {/* Floating Close Button */}
+      <button 
+        onClick={onClose}
+        className="absolute top-5 right-5 sm:top-6 sm:right-6 p-2 rounded-full bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-all z-30 cursor-pointer shadow-sm border border-slate-200/80 active:scale-95"
+        title="Close (Esc)"
+        aria-label="Close user details"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      {/* Full-Screen Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 pt-6 sm:pt-8">
+        <div className="max-w-7xl mx-auto">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-40 gap-3">
+              <Loader2 className="w-9 h-9 text-indigo-600 animate-spin" />
+              <p className="text-slate-400 font-semibold text-xs uppercase tracking-wider">
+                Loading User Intelligence...
+              </p>
             </div>
+          ) : user ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* Left Column: Profile Card, Partner Info & KPI Totals */}
+              <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+                
+                {/* Primary Identity Card */}
+                <section className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+                  {/* Top ID & Status row */}
+                  <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                    <button
+                      onClick={() => handleCopy(user?._id || userId, 'id')}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 hover:bg-slate-200/70 rounded-lg text-xs font-mono text-slate-600 border border-slate-200/70 transition-colors cursor-pointer group"
+                      title="Click to copy User ID"
+                    >
+                      <span>#{(user?._id || userId).substring(0, 14)}</span>
+                      {copiedKey === 'id' ? (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">
+                          <Check className="w-3 h-3 text-emerald-600" /> Copied
+                        </span>
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                      )}
+                    </button>
+
+                    <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                      isRecentlyActive
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                        : 'bg-slate-100 text-slate-600 border-slate-200/60'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${isRecentlyActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      <span>{isRecentlyActive ? 'Active now' : `Active ${timeAgo(user.lastSeen)}`}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4">
+                    {/* User Avatar */}
+                    <div className="relative flex-shrink-0">
+                      {user.avatar ? (
+                        <img
+                          src={user.avatar}
+                          alt={user.name || 'User'}
+                          className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shadow-sm"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-white items-center justify-center text-xl font-bold shadow-md shadow-indigo-500/20"
+                        style={{ display: user.avatar ? 'none' : 'flex' }}
+                      >
+                        {user.name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      {/* Platform pill overlaid on avatar */}
+                      <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-0.5 ${
+                        user.platform === 'android'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                      }`}>
+                        <Smartphone className="w-2.5 h-2.5" />
+                        {user.platform === 'android' ? 'Android' : user.platform === 'ios' ? 'iOS' : 'Other'}
+                      </span>
+                    </div>
+
+                    {/* User Primary Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                          {user.name || 'Anonymous User'}
+                        </h2>
+                        {user.nickname && (
+                          <span className="text-xs text-slate-400 font-medium">({user.nickname})</span>
+                        )}
+                      </div>
+
+                      {user.isPremium ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 mb-2">
+                          <Crown className="w-3 h-3 text-amber-500 fill-amber-500" />
+                          {user.premiumPlan ? `${user.premiumPlan} Premium` : 'Premium Member'}
+                        </span>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 mb-2">
+                          Free Tier
+                        </span>
+                      )}
+
+                      {/* Email with copy button */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <p className="text-xs text-slate-500 font-mono truncate">{user.email || 'No email associated'}</p>
+                        {user.email && (
+                          <button
+                            onClick={() => handleCopy(user.email, 'email')}
+                            className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Copy Email"
+                          >
+                            {copiedKey === 'email' ? (
+                              <Check className="w-3 h-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Demographic & Meta Pills */}
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-2 text-xs text-slate-600">
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/60 font-medium flex items-center gap-1.5">
+                      <span className="text-sm leading-none">{countryInfo.flag}</span>
+                      <span>{countryInfo.country}</span>
+                    </span>
+
+                    {(user.age || user.gender) && (
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/60 font-medium">
+                        {user.gender ? `${user.gender}` : ''}
+                        {user.gender && user.age ? ' • ' : ''}
+                        {user.age ? `${user.age} yrs` : ''}
+                      </span>
+                    )}
+
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/60 font-medium">
+                      {user.appVersion ? `v${user.appVersion}` : 'Unknown App'}
+                      {user.appBuildNumber ? <span className="text-slate-400 font-mono text-[11px] ml-1">({user.appBuildNumber})</span> : ''}
+                    </span>
+
+                    {user.preferredLanguage && (
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/60 font-medium uppercase font-mono text-[11px]">
+                        Lang: {user.preferredLanguage}
+                      </span>
+                    )}
+
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/60 font-medium">
+                      Joined {formatDate(user.createdAt)}
+                    </span>
+                  </div>
+                </section>
+
+                {/* Linked Partner & Relationship Section */}
+                <section className="bg-rose-50/50 rounded-2xl border border-rose-200/80 p-5 shadow-2xs">
+                  <div className="flex items-center justify-between mb-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                        <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+                      </div>
+                      <h3 className="text-xs font-bold text-rose-900 uppercase tracking-wider">
+                        Relationship & Partner Link
+                      </h3>
+                    </div>
+                    {pairedDays !== null && (
+                      <span className="text-xs font-semibold text-rose-700 bg-rose-100/70 px-2.5 py-0.5 rounded-full border border-rose-200">
+                        Paired {pairedDays} days
+                      </span>
+                    )}
+                  </div>
+
+                  {user.partnerData ? (
+                    <div className="space-y-3.5">
+                      {/* Partner Info Card */}
+                      <div className="bg-white p-3.5 rounded-xl border border-rose-100 flex items-center gap-3 shadow-2xs">
+                        {user.partnerData.avatar ? (
+                          <img
+                            src={user.partnerData.avatar}
+                            alt={user.partnerData.name || 'Partner'}
+                            className="w-12 h-12 rounded-xl object-cover border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center text-sm font-bold border border-rose-200">
+                            {user.partnerData.name?.[0]?.toUpperCase() || '?'}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-bold text-slate-800 truncate">
+                              {user.partnerData.name || 'Partner Account'}
+                            </p>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                              {user.partnerData.platform || 'Unknown'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono truncate">{user.partnerData.email || 'No email'}</p>
+                        </div>
+                      </div>
+
+                      {/* Streak Counters */}
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="bg-white p-3 rounded-xl border border-rose-100 flex flex-col items-center justify-center text-center shadow-2xs">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Current Streak</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Flame className="w-4 h-4 text-rose-500 fill-rose-500" />
+                            <span className="text-lg font-bold text-rose-600 tabular-nums">
+                              {user.streak?.current || 0}d
+                            </span>
+                          </div>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-rose-100 flex flex-col items-center justify-center text-center shadow-2xs">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Best Record</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <span className="text-lg font-bold text-amber-600 tabular-nums">
+                              {user.streak?.longest || 0}d
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white/80 p-4 rounded-xl border border-dashed border-rose-200 text-center flex items-center justify-center gap-2 text-xs text-slate-500">
+                      <Heart className="w-4 h-4 text-slate-300" />
+                      <span>Single Account • No active partner linked yet</span>
+                    </div>
+                  )}
+                </section>
+
+                {/* Engagement Metrics (6 KPI Grid) */}
+                <section className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Lifetime Engagement
+                    </h3>
+                    <span className="text-xs text-slate-400 font-medium">Aggregated totals</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Conversations</span>
+                        <span className="p-1 rounded-md bg-indigo-50 text-indigo-600">
+                          <MessageSquare className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.conversations || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Q&A Answers</span>
+                        <span className="p-1 rounded-md bg-sky-50 text-sky-600">
+                          <HelpCircle className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.questionAnswers || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Rituals Done</span>
+                        <span className="p-1 rounded-md bg-rose-50 text-rose-600">
+                          <Flame className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.completedRituals || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Games Won</span>
+                        <span className="p-1 rounded-md bg-amber-50 text-amber-600">
+                          <Gamepad2 className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.completedGames || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Mood Updates</span>
+                        <span className="p-1 rounded-md bg-emerald-50 text-emerald-600">
+                          <Smile className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.moodUpdates || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500">Memories</span>
+                        <span className="p-1 rounded-md bg-purple-50 text-purple-600">
+                          <Camera className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-slate-900 tabular-nums">
+                        {user.totals?.memories || 0}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+              </div>
+
+              {/* Right Column: Activity Intelligence Timeline Feed */}
+              <div className="lg:col-span-7 xl:col-span-8 space-y-4">
+                
+                {/* Section Header with Category Tabs */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                      Activity Intelligence Timeline
+                    </h3>
+                  </div>
+
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-medium self-start sm:self-auto">
+                    <button
+                      onClick={() => setActiveFilterTab('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        activeFilterTab === 'all'
+                          ? 'bg-white shadow-2xs text-slate-900 font-semibold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      All ({activityCounts.all})
+                    </button>
+                    <button
+                      onClick={() => setActiveFilterTab('answers')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        activeFilterTab === 'answers'
+                          ? 'bg-white shadow-2xs text-indigo-700 font-semibold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Q&A ({activityCounts.answers})
+                    </button>
+                    <button
+                      onClick={() => setActiveFilterTab('games')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        activeFilterTab === 'games'
+                          ? 'bg-white shadow-2xs text-purple-700 font-semibold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Games ({activityCounts.games})
+                    </button>
+                    <button
+                      onClick={() => setActiveFilterTab('moods')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        activeFilterTab === 'moods'
+                          ? 'bg-white shadow-2xs text-emerald-700 font-semibold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Moods ({activityCounts.moods})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Activity Feed List */}
+                <div className="space-y-3">
+                  {filteredActivities.length === 0 ? (
+                    <div className="py-24 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-8 shadow-xs">
+                      <Layers className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-slate-500 text-sm font-semibold">
+                        No activity records found in this category
+                      </p>
+                      <p className="text-slate-400 text-xs mt-1">
+                        Try selecting another tab or check back after the user interacts with the app.
+                      </p>
+                    </div>
+                  ) : (
+                    filteredActivities.map((act) => {
+                      const isExpanded = expandedActivityId === act._id;
+                      const hasMessages = Array.isArray(act.messages) && act.messages.length > 0;
+
+                      // Badge styling by activity type
+                      let badgeBg = 'bg-slate-100 text-slate-700 border-slate-200';
+                      let icon = <Layers className="w-3.5 h-3.5" />;
+                      if (act.type === 'Answer Session') {
+                        badgeBg = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                        icon = <MessageSquare className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Question V2') {
+                        badgeBg = 'bg-sky-50 text-sky-700 border-sky-200';
+                        icon = <HelpCircle className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Wordle') {
+                        badgeBg = 'bg-purple-50 text-purple-700 border-purple-200';
+                        icon = <Sparkles className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'TicTacToe') {
+                        badgeBg = 'bg-amber-50 text-amber-700 border-amber-200';
+                        icon = <Gamepad2 className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Jigsaw') {
+                        badgeBg = 'bg-blue-50 text-blue-700 border-blue-200';
+                        icon = <Puzzle className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Daily Challenge') {
+                        badgeBg = 'bg-rose-50 text-rose-700 border-rose-200';
+                        icon = <Flame className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Mood Update') {
+                        badgeBg = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                        icon = <Smile className="w-3.5 h-3.5" />;
+                      } else if (act.type === 'Memory') {
+                        badgeBg = 'bg-violet-50 text-violet-700 border-violet-200';
+                        icon = <Camera className="w-3.5 h-3.5" />;
+                      }
+
+                      return (
+                        <div
+                          key={act._id}
+                          className={`bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs hover:border-slate-300 transition-all ${
+                            hasMessages ? 'cursor-pointer' : ''
+                          }`}
+                          onClick={() => {
+                            if (hasMessages) {
+                              setExpandedActivityId(isExpanded ? null : act._id);
+                            }
+                          }}
+                        >
+                          {/* Item Top Row */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider border ${badgeBg}`}>
+                                {icon}
+                                {act.type}
+                              </span>
+                              {act.questionCategory && (
+                                <span className="text-xs font-semibold text-slate-600 truncate max-w-sm">
+                                  {act.questionCategory}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-400 font-medium tabular-nums" title={act._time.toLocaleString()}>
+                              {timeAgo(act._time)}
+                            </span>
+                          </div>
+
+                          {/* Primary Content / Text */}
+                          <p className="text-sm font-semibold text-slate-900 leading-snug">
+                            {act.text || act.prompt || 'Activity recorded'}
+                          </p>
+
+                          {/* Answer Quote Block */}
+                          {act.answer && (
+                            <div className="mt-3 bg-slate-50 rounded-xl p-3.5 border-l-3 border-indigo-500 text-xs text-slate-700 leading-relaxed italic">
+                              &ldquo;{act.answer}&rdquo;
+                            </div>
+                          )}
+
+                          {/* Message count toggle chip */}
+                          {hasMessages && (
+                            <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs text-slate-500">
+                              <span className="font-semibold text-indigo-600">
+                                {act.messages.length} message{act.messages.length === 1 ? '' : 's'} exchanged
+                              </span>
+                              <span className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                                {isExpanded ? 'Hide conversation thread' : 'View conversation thread'}
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Expandable Chat Conversation Thread */}
+                          {isExpanded && hasMessages && (
+                            <div className="mt-3.5 pt-3.5 border-t border-slate-100 space-y-2.5 animate-in fade-in duration-200">
+                              {act.messages.map((m, mIdx) => {
+                                const isFromUser = m.senderId?.toString() === userId.toString();
+                                return (
+                                  <div
+                                    key={mIdx}
+                                    className={`flex flex-col ${isFromUser ? 'items-end' : 'items-start'}`}
+                                  >
+                                    <div
+                                      className={`max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed shadow-2xs ${
+                                        isFromUser
+                                          ? 'bg-indigo-600 text-white rounded-tr-none'
+                                          : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200/80'
+                                      }`}
+                                    >
+                                      {m.content}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 font-medium mt-1">
+                                      {isFromUser ? user.name || 'User' : user.partnerData?.name || 'Partner'} • {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+          ) : (
+            <div className="py-32 text-center bg-white rounded-2xl border border-slate-200/80 p-8 shadow-xs max-w-lg mx-auto">
+              <p className="text-slate-600 font-semibold text-base mb-2">Could not load user profile details</p>
+              <p className="text-slate-400 text-xs mb-6">The user record could not be retrieved from the server.</p>
+              <button
+                onClick={onClose}
+                className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/20 cursor-pointer"
+              >
+                Back to User List
+              </button>
+            </div>
+          )}
         </div>
-    );
+      </div>
+    </div>,
+    document.body
+  );
 };
 
 export default UserModal;

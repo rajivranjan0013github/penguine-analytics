@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { getSummary } from './controllers/analyticsController.js';
+import { getSummary, getTimezoneDistribution, getCallHealth, getQuestionEngagement } from './controllers/analyticsController.js';
 import { getUsers, getUserDetails } from './controllers/userController.js';
 
 dotenv.config();
@@ -183,11 +183,15 @@ app.use('/api/analytics', async (req, res, next) => {
 
 // --- Analytics Routes ---
 app.get('/api/analytics/summary', getSummary);
+app.get('/api/analytics/users/timezones', getTimezoneDistribution);
+app.get('/api/analytics/calls', getCallHealth);
+app.get('/api/analytics/questions', getQuestionEngagement);
 app.get('/api/analytics/users', getUsers);
 app.get('/api/analytics/users/:id', getUserDetails);
 
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
+    console.log(`Backend server running on http://localhost:${PORT}`);
   });
 }
 

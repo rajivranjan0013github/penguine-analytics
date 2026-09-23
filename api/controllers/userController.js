@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { getCountryForTimezone } from 'countries-and-timezones';
+import { getUserCountry, getTimezonesForCountry } from '../../countryMapper.js';
 
 const clampInteger = (value, fallback, minimum, maximum) => {
     const parsed = Number.parseInt(value, 10);
@@ -18,31 +18,70 @@ export const getUsers = async (req, res) => {
         const page = clampInteger(req.query.page, 1, 1, 10_000);
         const limit = clampInteger(req.query.limit, 15, 1, 100);
         const search = String(req.query.search || '').trim().slice(0, 100);
+        const country = String(req.query.country || '').trim().slice(0, 100);
         const skip = (page - 1) * limit;
 
         const db = mongoose.connection.db;
         const users = db.collection('users');
 
-        // Build search query
-        const escapedSearch = escapeRegex(search);
-        const query = escapedSearch ? {
-            $or: [
-                { name: { $regex: escapedSearch, $options: 'i' } },
-                { email: { $regex: escapedSearch, $options: 'i' } }
-            ]
-        } : {};
+        // Build query
+        const andConditions = [];
+
+        if (search) {
+            const escapedSearch = escapeRegex(search);
+            andConditions.push({
+                $or: [
+                    { name: { $regex: escapedSearch, $options: 'i' } },
+                    { email: { $regex: escapedSearch, $options: 'i' } }
+                ]
+            });
+        }
+
+        if (country) {
+            const lowerCountry = country.toLowerCase();
+            const isUnknown = ['unknown', 'unknown country', 'utc', 'utc / global'].includes(lowerCountry);
+            if (isUnknown) {
+                andConditions.push({
+                    $or: [
+                        { timezone: { $in: [null, '', 'unknown', 'UTC'] } },
+                        { timezone: { $exists: false } }
+                    ]
+                });
+            } else {
+                const matchedTzs = getTimezonesForCountry(country);
+                const countryRegex = { $regex: escapeRegex(country), $options: 'i' };
+                const countryOr = [];
+                if (matchedTzs.length > 0) {
+                    countryOr.push({ timezone: { $in: matchedTzs } });
+                } else {
+                    countryOr.push({ timezone: countryRegex });
+                }
+                countryOr.push({ country: countryRegex });
+                countryOr.push({ 'country.name': countryRegex });
+                countryOr.push({ 'country.code': countryRegex });
+
+                andConditions.push({ $or: countryOr });
+            }
+        }
+
+        const query = andConditions.length > 1
+            ? { $and: andConditions }
+            : (andConditions.length === 1 ? andConditions[0] : {});
 
         // Execute queries in parallel
-        const [userList, total] = await Promise.all([
+        const [userList, total, platformStats] = await Promise.all([
             users.find(query, {
                 projection: {
                     name: 1,
+                    email: 1,
                     avatar: 1,
                     isPremium: 1,
                     platform: 1,
                     partnerId: 1,
                     connectionDate: 1,
                     timezone: 1,
+                    country: 1,
+                    flag: 1,
                     appVersion: 1,
                     lastSeen: 1,
                     createdAt: 1,
@@ -53,14 +92,40 @@ export const getUsers = async (req, res) => {
                 .skip(skip)
                 .limit(limit)
                 .toArray(),
-            users.countDocuments(query)
+            users.countDocuments(query),
+            users.aggregate([
+                { $match: query },
+                {
+                    $group: {
+                        _id: null,
+                        android: { $sum: { $cond: [{ $eq: [{ $toLower: '$platform' }, 'android'] }, 1, 0] } },
+                        ios: { $sum: { $cond: [{ $eq: [{ $toLower: '$platform' }, 'ios'] }, 1, 0] } },
+                        premium: { $sum: { $cond: [{ $eq: ['$isPremium', true] }, 1, 0] } },
+                        premiumAndroid: { $sum: { $cond: [{ $and: [{ $eq: [{ $toLower: '$platform' }, 'android'] }, { $eq: ['$isPremium', true] }] }, 1, 0] } },
+                        premiumIos: { $sum: { $cond: [{ $and: [{ $eq: [{ $toLower: '$platform' }, 'ios'] }, { $eq: ['$isPremium', true] }] }, 1, 0] } }
+                    }
+                }
+            ]).toArray()
         ]);
 
+        const stats = platformStats[0] || {
+            android: 0,
+            ios: 0,
+            premium: 0,
+            premiumAndroid: 0,
+            premiumIos: 0
+        };
+
         const usersWithCountry = userList.map((user) => {
-            const country = user.timezone ? getCountryForTimezone(user.timezone) : null;
+            const countryInfo = getUserCountry(user);
             return {
                 ...user,
-                country: country ? { code: country.id, name: country.name } : null,
+                flag: countryInfo.flag,
+                country: {
+                    code: countryInfo.code,
+                    name: countryInfo.country,
+                    flag: countryInfo.flag,
+                },
             };
         });
 
@@ -71,7 +136,8 @@ export const getUsers = async (req, res) => {
                 limit,
                 total,
                 totalPages: Math.ceil(total / limit)
-            }
+            },
+            stats
         });
     } catch (err) {
         console.error('Fetch Users Error:', err);
@@ -99,6 +165,8 @@ export const getUserDetails = async (req, res) => {
                     connectionDate: 1,
                     onboarding: 1,
                     timezone: 1,
+                    country: 1,
+                    flag: 1,
                     preferredLanguage: 1,
                     platform: 1,
                     appVersion: 1,
@@ -131,7 +199,7 @@ export const getUserDetails = async (req, res) => {
             const partnerId = parseUserId(user.partnerId);
             partnerData = await db.collection('users').findOne(
                 { _id: partnerId },
-                { projection: { name: 1, email: 1, platform: 1, createdAt: 1 } }
+                { projection: { name: 1, email: 1, avatar: 1, platform: 1, createdAt: 1 } }
             );
         }
 
@@ -202,8 +270,16 @@ export const getUserDetails = async (req, res) => {
                 : null
         ]);
 
+        const countryInfo = getUserCountry(user);
+
         res.json({
             ...user,
+            flag: countryInfo.flag,
+            country: {
+                code: countryInfo.code,
+                name: countryInfo.country,
+                flag: countryInfo.flag,
+            },
             partnerData,
             couple: activeCouple ? {
                 _id: activeCouple._id,

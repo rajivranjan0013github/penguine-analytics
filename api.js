@@ -50,12 +50,53 @@ export const fetchSummary = async (days) => {
     return res.json();
 };
 
-export const fetchUsers = async (page, limit, search) => {
-    const url = `/api/analytics/users?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`;
+export const fetchDemographyData = async (range) => {
+    let url = '/api/analytics/users/timezones';
+    if (typeof range === 'number' && range > 0) {
+        url += `?days=${range}`;
+    } else if (range && typeof range === 'object' && range.startDate && range.endDate) {
+        url += `?startDate=${range.startDate}&endDate=${range.endDate}`;
+    }
+    const res = await secureFetch(url);
+    if (!res.ok) throw new Error('Failed to fetch demography data');
+    return res.json();
+};
+
+export const fetchCallHealth = async (range) => {
+    let url = '/api/analytics/calls';
+    if (typeof range === 'number' && range > 0) {
+        url += `?days=${range}`;
+    } else if (range && typeof range === 'object' && range.startDate && range.endDate) {
+        url += `?startDate=${range.startDate}&endDate=${range.endDate}`;
+    }
+    const res = await secureFetch(url);
+    if (!res.ok) throw new Error('Failed to fetch call health data');
+    return res.json();
+};
+
+export const fetchQuestionEngagement = async (range) => {
+    let url = '/api/analytics/questions';
+    if (typeof range === 'number' && range > 0) {
+        url += `?days=${range}`;
+    } else if (range && typeof range === 'object' && range.startDate && range.endDate) {
+        url += `?startDate=${range.startDate}&endDate=${range.endDate}`;
+    }
+    const res = await secureFetch(url);
+    if (!res.ok) throw new Error('Failed to fetch question engagement data');
+    return res.json();
+};
+
+export const fetchUsers = async (page = 1, limit = 15, search = '', country = '') => {
+    let url = `/api/analytics/users?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`;
+    if (country) {
+        url += `&country=${encodeURIComponent(country)}`;
+    }
     const res = await secureFetch(url);
     if (!res.ok) throw new Error('Failed to fetch users');
     return res.json();
 };
+
+export const fetchPaginatedUsers = fetchUsers;
 
 export const fetchUserDetails = async (userId) => {
     const res = await secureFetch(`/api/analytics/users/${userId}`);

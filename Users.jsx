@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import UserModal from './UserModal.jsx';
 import { 
-  Users as UsersIcon, 
+  List,
   Search, 
   ChevronLeft, 
   ChevronRight, 
   Crown,
-  Calendar,
-  Globe2,
   X,
-  Smartphone,
-  Heart,
-  UserPlus
+  Heart
 } from 'lucide-react';
 
 import { fetchUsers } from './api';
+import { getUserCountry } from './countryMapper.js';
 
 const Users = () => {
     const [selectedUserId, setSelectedUserId] = useState(null);
@@ -58,8 +55,10 @@ const Users = () => {
     };
 
     const timeAgo = (dateString) => {
+        if (!dateString) return 'Never';
         const now = new Date();
         const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'Never';
         const seconds = Math.floor((now - date) / 1000);
         if (seconds < 60) return 'Just now';
         const minutes = Math.floor(seconds / 60);
@@ -71,161 +70,175 @@ const Users = () => {
         return date.toLocaleDateString();
     };
 
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'N/A';
+        const now = new Date();
+        const diffInMs = now.getTime() - date.getTime();
+        if (diffInMs >= 0 && diffInMs < 24 * 60 * 60 * 1000) {
+            const diffInSeconds = Math.floor(diffInMs / 1000);
+            const diffInMinutes = Math.floor(diffInSeconds / 60);
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            if (diffInSeconds < 60) return 'Just now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            return `${diffInHours}h ago`;
+        }
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        });
+    };
+
     return (
-        <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 animate-in fade-in duration-500">
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
-                        <UsersIcon className="w-8 h-8 text-indigo-500" />
-                        User Management
-                    </h1>
-                    <p className="text-white/40 mt-1 font-medium">
-                        {totalUsers} registered users found in the system
-                    </p>
-                </div>
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                            <List className="w-5 h-5 text-indigo-500" />
+                            All Users
+                        </h3>
+                        <p className="text-xs text-slate-400 border-l border-slate-200 pl-2 ml-2">
+                            {loading ? 'Loading...' : `${totalUsers} users`}
+                        </p>
+                    </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    <form onSubmit={handleSearch} className="relative group w-full md:w-80">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 group-focus-within:text-indigo-500 transition-colors" />
-                        <input
-                            type="text"
-                            placeholder="Find a user..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="w-full bg-[#2a2a2a] border border-white/5 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-white/30"
-                        />
-                        {search && (
-                            <button
-                                type="button"
-                                onClick={clearSearch}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 hover:text-white transition-colors"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
+                    <form onSubmit={handleSearch} className="flex gap-2 w-full md:w-auto">
+                        <div className="relative group w-full md:w-64">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                            <input
+                                type="text"
+                                placeholder="Search by name..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+                            />
+                            {search && (
+                                <button
+                                    type="button"
+                                    onClick={clearSearch}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 cursor-pointer"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20 cursor-pointer disabled:opacity-50"
+                        >
+                            Search
+                        </button>
                     </form>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        Search
-                    </button>
                 </div>
-            </div>
 
-            {/* Users Table */}
-            <div className="bg-[#2a2a2a] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left">
+                    <table className="w-full">
                         <thead>
-                            <tr className="border-b border-white/5 bg-white/5">
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">User Profile</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Status</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Platform</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Country</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Last Active</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Connectivity</th>
-                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-white/40">Joined</th>
+                            <tr className="border-b border-slate-100">
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">User</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Country</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Platform</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Status</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Connectivity</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Last Active</th>
+                                <th className="text-left py-3 px-4 text-xs font-bold text-slate-500 uppercase">Joined</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody>
                             {loading ? (
-                                Array.from({ length: limit }).map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
+                                Array.from({ length: 10 }).map((_, i) => (
+                                    <tr key={i} className="animate-pulse border-b border-slate-50">
                                         {Array.from({ length: 7 }).map((_, j) => (
-                                            <td key={j} className="px-6 py-4">
-                                                <div className="h-4 bg-white/5 rounded w-full"></div>
+                                            <td key={j} className="py-3 px-4">
+                                                <div className="h-4 bg-slate-100 rounded w-full"></div>
                                             </td>
                                         ))}
                                     </tr>
                                 ))
                             ) : users.length > 0 ? (
-                                users.map((user) => (
+                                users.map((user) => {
+                                    const countryInfo = getUserCountry(user);
+                                    const isSelected = selectedUserId === user._id;
+                                    return (
                                     <tr 
                                         key={user._id} 
                                         onClick={() => setSelectedUserId(user._id)}
-                                        className="hover:bg-white/5 transition-colors group cursor-pointer"
+                                        className={`border-b transition-colors cursor-pointer ${
+                                            isSelected 
+                                                ? 'bg-indigo-50/70 border-indigo-200' 
+                                                : 'border-slate-50 hover:bg-slate-50/80'
+                                        }`}
                                     >
-                                        <td className="px-6 py-4">
+                                        <td className="py-3 px-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/20 group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                                                {user.avatar ? (
+                                                    <img
+                                                        src={user.avatar}
+                                                        alt={user.name || 'User'}
+                                                        className="w-9 h-9 rounded-xl object-cover border border-slate-200"
+                                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                                                    />
+                                                ) : null}
+                                                <div
+                                                    className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-50 to-indigo-100 text-indigo-600 items-center justify-center text-xs font-bold border border-indigo-200/60"
+                                                    style={{ display: user.avatar ? 'none' : 'flex' }}
+                                                >
                                                     {user.name?.[0]?.toUpperCase() || '?'}
                                                 </div>
-                                                <span className="font-semibold text-white/90">{user.name || 'Anonymous'}</span>
+                                                <span className="text-sm font-semibold text-slate-900 truncate">{user.name || 'Anonymous'}</span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="py-3 px-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-base leading-none">{countryInfo.flag}</span>
+                                                <span className="text-xs font-medium text-slate-700">
+                                                    {countryInfo.country}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${
+                                                user.platform === 'android' 
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80' 
+                                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200/80'
+                                            }`}>
+                                                {user.platform === 'android' ? 'Android' : (user.platform === 'ios' ? 'iOS' : (user.platform || 'Other'))}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-4">
                                             {user.isPremium ? (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                                                    <Crown className="w-3 h-3" />
-                                                    Premium
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                                    <Crown className="w-3 h-3 text-amber-500 fill-amber-500" /> Premium
                                                 </span>
                                             ) : (
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-white/5 text-white/40 border border-white/5">
-                                                    Free Tier
+                                                <span className="text-xs text-slate-400">Free</span>
+                                            )}
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            {user.partnerId ? (
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                                    <Heart className="w-3 h-3 fill-rose-500 text-rose-500" /> Connected
                                                 </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {user.platform ? (
-                                                <div className="flex items-center gap-2">
-                                                    <Smartphone className={`w-3.5 h-3.5 ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`} />
-                                                    <span className={`text-xs font-bold uppercase tracking-wider ${user.platform === 'ios' ? 'text-indigo-400' : 'text-emerald-400'}`}>
-                                                        {user.platform === 'ios' ? 'iOS' : user.platform}
-                                                    </span>
-                                                    {user.appVersion && <span className="text-[10px] text-white/25">v{user.appVersion}</span>}
-                                                </div>
                                             ) : (
-                                                <span className="text-xs text-white/20 italic">Unknown</span>
+                                                <span className="text-xs text-slate-400">Unpaired</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2" title={user.timezone || 'Timezone not reported'}>
-                                                <Globe2 className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-                                                <div className="min-w-0">
-                                                    <p className="max-w-36 truncate text-xs font-bold text-white/70">
-                                                        {user.country?.name || 'Unknown country'}
-                                                    </p>
-                                                    {user.country?.code && (
-                                                        <p className="mt-0.5 text-[9px] font-black uppercase tracking-wider text-white/25">{user.country.code}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-white/50">
+                                        <td className="py-3 px-4 text-xs font-medium text-slate-500 tabular-nums">
                                             {user.lastSeen ? timeAgo(user.lastSeen) : 'Never'}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            {user.partnerId ? (
-                                                <div>
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                                                        <Heart className="w-3 h-3 fill-rose-500/20" />
-                                                        Connected
-                                                    </span>
-                                                    <p className="mt-1.5 pl-1 text-[9px] font-semibold text-white/35">
-                                                        {user.connectionDate ? timeAgo(user.connectionDate) : 'Date unavailable'}
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-white/5 text-white/30 border border-white/5">
-                                                    <UserPlus className="w-3 h-3" />
-                                                    Unpaired
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-white/50">
-                                            <div className="flex items-center gap-2">
-                                                <Calendar className="w-3.5 h-3.5" />
-                                                {timeAgo(user.createdAt)}
-                                            </div>
+                                        <td className="py-3 px-4 text-xs font-medium text-slate-500 tabular-nums">
+                                            {formatDate(user.createdAt)}
                                         </td>
                                     </tr>
-                                ))
+                                    );
+                                })
                             ) : (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-white/20 italic">
+                                    <td colSpan="7" className="py-12 text-center text-slate-400 italic text-sm">
                                         No users found matching your search.
                                     </td>
                                 </tr>
@@ -234,32 +247,41 @@ const Users = () => {
                     </table>
                 </div>
 
-                {/* Pagination bar */}
-                <div className="px-6 py-4 border-t border-white/5 bg-white/5 flex items-center justify-between">
-                    <p className="text-sm text-white/40">
-                        Page <span className="font-bold text-white">{page}</span> of <span className="font-bold text-white">{totalPages}</span>
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+                    <p className="text-sm text-slate-500">
+                        Showing <span className="font-bold text-slate-700">{(page - 1) * limit + 1}</span> to{' '}
+                        <span className="font-bold text-slate-700">{Math.min(page * limit, totalUsers)}</span> of{' '}
+                        <span className="font-bold text-slate-700">{totalUsers}</span> users
                     </p>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
                             disabled={page === 1 || loading}
-                            className="p-2 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 transition-all text-white/60"
+                            className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                         >
-                            <ChevronLeft className="w-5 h-5" />
+                            <ChevronLeft className="w-4 h-4 text-slate-600" />
                         </button>
-                        
                         <div className="flex items-center gap-1">
-                            {Array.from({ length: totalPages }).slice(Math.max(0, page - 3), page + 2).map((_, i) => {
-                                const pageNum = i + Math.max(1, page - 2);
-                                if (pageNum > totalPages) return null;
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum;
+                                if (totalPages <= 5) {
+                                    pageNum = i + 1;
+                                } else if (page <= 3) {
+                                    pageNum = i + 1;
+                                } else if (page >= totalPages - 2) {
+                                    pageNum = totalPages - 4 + i;
+                                } else {
+                                    pageNum = page - 2 + i;
+                                }
                                 return (
                                     <button
                                         key={pageNum}
                                         onClick={() => setPage(pageNum)}
-                                        className={`w-9 h-9 rounded-lg text-sm font-bold transition-all ${
-                                            page === pageNum 
-                                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' 
-                                                : 'text-white/40 hover:bg-white/10 hover:text-white'
+                                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                                            page === pageNum
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'hover:bg-slate-100 text-slate-600'
                                         }`}
                                     >
                                         {pageNum}
@@ -267,23 +289,24 @@ const Users = () => {
                                 );
                             })}
                         </div>
-
                         <button
-                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                             disabled={page === totalPages || loading}
-                            className="p-2 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 transition-all text-white/60"
+                            className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                         >
-                            <ChevronRight className="w-5 h-5" />
+                            <ChevronRight className="w-4 h-4 text-slate-600" />
                         </button>
                     </div>
                 </div>
             </div>
 
             {/* User Details Modal */}
-            <UserModal 
-                userId={selectedUserId} 
-                onClose={() => setSelectedUserId(null)} 
-            />
+            {selectedUserId && (
+                <UserModal 
+                    userId={selectedUserId} 
+                    onClose={() => setSelectedUserId(null)} 
+                />
+            )}
         </div>
     );
 };
